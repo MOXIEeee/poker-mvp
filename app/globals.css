@@ -1,26 +1,117 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --felt-green: #0d6e3f;
+  --felt-dark: #064029;
+  --felt-darker: #022818;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-background: #0a0e1a;
+  --color-foreground: #ededed;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+html, body {
+  background: radial-gradient(ellipse at top, #1e293b 0%, #0f172a 50%, #020617 100%);
+  color: #ededed;
+  min-height: 100vh;
+  font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Noto Sans SC', 'Segoe UI', sans-serif;
+}
+
+/* 牌桌绒布质感 */
+.poker-table {
+  background:
+    radial-gradient(ellipse at 30% 30%, rgba(255,255,255,0.08) 0%, transparent 50%),
+    radial-gradient(ellipse at center, var(--felt-green) 0%, var(--felt-dark) 60%, var(--felt-darker) 100%);
+  box-shadow:
+    inset 0 0 100px rgba(0,0,0,0.5),
+    inset 0 0 30px rgba(0,0,0,0.4),
+    0 0 80px rgba(16, 185, 129, 0.1);
+  position: relative;
+}
+.poker-table::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background-image:
+    repeating-linear-gradient(45deg, transparent 0, transparent 2px, rgba(0,0,0,0.02) 2px, rgba(0,0,0,0.02) 4px);
+  pointer-events: none;
+}
+
+/* 扑克牌 */
+.playing-card {
+  background: linear-gradient(180deg, #ffffff 0%, #f8f8f8 100%);
+  box-shadow:
+    0 4px 12px rgba(0,0,0,0.4),
+    inset 0 1px 0 rgba(255,255,255,1);
+}
+.card-back {
+  background:
+    repeating-linear-gradient(45deg, #1e3a8a 0, #1e3a8a 4px, #1e40af 4px, #1e40af 8px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  position: relative;
+}
+.card-back::after {
+  content: '♠';
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255,255,255,0.4);
+  font-size: 1.2em;
+}
+
+/* 当前行动高亮 */
+@keyframes pulse-glow {
+  0%, 100% {
+    box-shadow:
+      0 0 0 0 rgba(250, 204, 21, 0.6),
+      0 0 30px rgba(250, 204, 21, 0.3);
+  }
+  50% {
+    box-shadow:
+      0 0 0 8px rgba(250, 204, 21, 0),
+      0 0 50px rgba(250, 204, 21, 0.5);
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* 自定义滚动条 */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.1);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255,255,255,0.2);
+}
+
+/* Range slider 自定义 */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+input[type="range"]::-webkit-slider-runnable-track {
+  background: rgba(255,255,255,0.1);
+  height: 4px;
+  border-radius: 2px;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  margin-top: -6px;
+  background: #facc15;
+  height: 16px;
+  width: 16px;
+  border-radius: 50%;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.3);
 }
