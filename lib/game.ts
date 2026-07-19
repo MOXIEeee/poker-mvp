@@ -112,7 +112,7 @@ export async function createRoom(settings: RoomSettings, hostNickname: string): 
     connected: true,
     lastHeartbeat: Date.now(),
     revealed: false,
-    revealDecision: null,
+    mucked: false,
   };
 
   const room: Room = {
@@ -168,7 +168,7 @@ export async function joinRoom(
     connected: true,
     lastHeartbeat: Date.now(),
     revealed: false,
-    revealDecision: null,
+    mucked: false,
   };
 
   room.players.push(newPlayer);
@@ -270,7 +270,7 @@ function startNewHand(room: Room): void {
     p.lastAction = undefined;
     p.lastActionAmount = undefined;
     p.revealed = false;
-    p.revealDecision = null;
+    p.mucked = false;
   });
 
   room.deck = shuffle(createDeck());
@@ -487,6 +487,7 @@ function showdown(room: Room): void {
     return;
   }
 
+  // 立即结算：发牌、算赢家、分池
   const evaluated = activePlayers.map(p => ({
     player: p,
     hand: evaluateHand([...p.holeCards, ...room.communityCards]),
@@ -494,43 +495,6 @@ function showdown(room: Room): void {
 
   const sidePots = calculateSidePots(evaluated);
   room.sidePots = sidePots;
-
-  // 先把每个非弃牌玩家的 revealed/decision 复位，等待亮牌/弃牌决定
-  for (const p of activePlayers) {
-    p.revealed = false;
-    p.revealDecision = null;
-  }
-
-  // 进入亮牌阶段：先暂存评估结果，每个人选完后再算 winners
-  room.pendingShowdown = {
-    evaluated: evaluated.map(e => ({
-      playerId: e.player.id,
-      hand: e.hand,
-      totalBetThisHand: e.player.totalBetThisHand,
-    })),
-    sidePots,
-  };
-  room.stage = 'showdown_reveal';
-  room.status = 'ended';
-  room.activePlayerIndex = null;
-}
-
-// 把 showdown_reveal 阶段的决定汇总为最终结果
-function finalizeShowdown(room: Room): void {
-  const pending = room.pendingShowdown;
-  if (!pending) {
-    // 没有 pending（理论上不该走到这里）
-    room.stage = 'ended';
-    return;
-  }
-
-  // 把玩家对象按 id 找回
-  const evaluated = pending.evaluated.map(e => {
-    const player = room.players.find(p => p.id === e.playerId)!;
-    return { player, hand: e.hand };
-  });
-
-  const sidePots = pending.sidePots;
 
   const playerWinnings = new Map<string, { amount: number; pots: { potIndex: number; amount: number }[]; hand: EvaluatedHand }>();
 
@@ -567,36 +531,29 @@ function finalizeShowdown(room: Room): void {
     potsWon: info.pots,
   }));
   room.pot = 0;
+  room.status = 'ended';
   room.stage = 'showdown';
-  room.pendingShowdown = undefined;
-  // status 保持 'ended'
   room.activePlayerIndex = null;
+  // revealed/mucked 状态由玩家后续主动 toggle，不在这里初始化
+  // （让之前的 toggle 状态保留在 result panel，便于玩家切换）
 }
 
-export async function decideShowdown(
+// 亮牌/弃牌 toggle（纯展示性，不阻塞结算）
+export async function toggleReveal(
   roomId: string,
   playerId: string,
-  choice: 'show' | 'muck'
+  reveal: boolean
 ): Promise<{ ok: true; room: Room } | { error: string }> {
   const room = await kvGetRoom(roomId);
   if (!room) return { error: '房间不存在' };
-  if (room.stage !== 'showdown_reveal') return { error: '当前不在亮牌阶段' };
+  if (room.status !== 'ended') return { error: '牌局还未结束' };
 
   const player = room.players.find(p => p.id === playerId);
   if (!player) return { error: '玩家不在房间内' };
-  if (player.folded) return { error: '你已经弃牌了' };
-  if (player.revealDecision) return { error: '你已经决定过了' };
+  if (player.folded) return { error: '你已经弃牌了，不能亮牌' };
 
-  player.revealDecision = choice;
-  player.revealed = choice === 'show';
-
-  // 检查所有未弃牌玩家是否都决定完了
-  const remaining = room.players.filter(p => !p.folded);
-  const allDecided = remaining.every(p => p.revealDecision !== null);
-
-  if (allDecided) {
-    finalizeShowdown(room);
-  }
+  player.revealed = reveal;
+  player.mucked = !reveal;
 
   room.updatedAt = Date.now();
   await kvSetRoom(room);

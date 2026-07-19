@@ -32,7 +32,6 @@ export type GameStage =
   | 'flop'             // 翻牌圈
   | 'turn'             // 转牌圈
   | 'river'            // 河牌圈
-  | 'showdown_reveal'  // 摊牌前选择是否亮牌
   | 'showdown'         // 摊牌结果
   | 'ended';           // 本手结束
 
@@ -55,9 +54,9 @@ export interface PlayerState {
   lastActionAmount?: number;
   connected: boolean;
   lastHeartbeat: number;  // 最后心跳时间（用于失联检测）
-  // 摊牌阶段（showdown_reveal）专用
-  revealDecision?: 'show' | 'muck' | null;  // 是否已做出亮牌/弃牌决定
-  revealed: boolean;                        // true = 亮牌（其他人可见底牌）
+  // 亮牌/弃牌（纯展示性 toggle，不阻塞结算）
+  revealed: boolean;        // true = 亮牌（其他人可见底牌）
+  mucked: boolean;          // true = 主动弃牌隐藏（即使赢了也不亮）
 }
 
 export interface RoomSettings {
@@ -99,11 +98,6 @@ export interface Room {
   handNumber: number;       // 当前是第几手牌
   sidePots?: SidePot[];     // 边池明细（仅 showdown 时填充）
   lastWinners?: WinnerInfo[];
-  // 摊牌前阶段暂存数据（亮牌/弃牌阶段完成后才结算 lastWinners）
-  pendingShowdown?: {
-    evaluated: { playerId: string; hand: EvaluatedHand; totalBetThisHand: number }[];
-    sidePots: SidePot[];
-  };
   createdAt: number;
   updatedAt: number;
 }

@@ -1,26 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { decideShowdown } from '@/lib/game';
+import { toggleReveal } from '@/lib/game';
 import { notifyRoom } from '@/lib/pusher-server';
 
+// 亮牌/弃牌 toggle（纯展示性，不影响结算）
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
   const body = await req.json();
-  const { playerId, choice } = body as {
+  const { playerId, reveal } = body as {
     playerId: string;
-    choice: 'show' | 'muck';
+    reveal: boolean;
   };
 
   if (!playerId) {
     return NextResponse.json({ error: '缺少 playerId' }, { status: 400 });
   }
-  if (choice !== 'show' && choice !== 'muck') {
-    return NextResponse.json({ error: 'choice 必须是 show 或 muck' }, { status: 400 });
+  if (typeof reveal !== 'boolean') {
+    return NextResponse.json({ error: 'reveal 必须是 boolean' }, { status: 400 });
   }
 
-  const result = await decideShowdown(id, playerId, choice);
+  const result = await toggleReveal(id, playerId, reveal);
   if ('error' in result) {
     return NextResponse.json({ error: result.error }, { status: 400 });
   }
