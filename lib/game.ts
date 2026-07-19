@@ -2,12 +2,19 @@ import type { Card, EvaluatedHand, PlayerState, Room, RoomSettings, GameStage, P
 import { createDeck, shuffle, dealHoleCards, dealCommunity } from './deck';
 import { evaluateHand } from './hand';
 import { nanoid } from 'nanoid';
-import { kv } from '@vercel/kv';
+import { Redis } from '@upstash/redis';
 
-// ==================== 存储层：Vercel KV (生产) + 内存 Map (本地 dev) ====================
+// ==================== 存储层：Upstash Redis (生产) + 内存 Map (本地 dev) ====================
 
-// Vercel KV 启用条件：有 KV_REST_API_URL 环境变量
-const IS_KV = !!process.env.KV_REST_API_URL && !!process.env.KV_REST_API_TOKEN;
+// Upstash Redis 启用条件：有 UPSTASH_REDIS_REST_URL + TOKEN
+const IS_REDIS = !!process.env.UPSTASH_REDIS_REST_URL && !!process.env.UPSTASH_REDIS_REST_TOKEN;
+
+const redis = IS_REDIS
+  ? new Redis({
+      url: process.env.UPSTASH_REDIS_REST_URL!,
+      token: process.env.UPSTASH_REDIS_REST_TOKEN!,
+    })
+  : null;
 
 // 本地 dev 用内存 Map（生产环境绝对不能 fallback）
 const memoryRooms = new Map<string, Room>();
@@ -17,49 +24,49 @@ const ROOM_KEY = (id: string) => `poker:room:${id}`;
 const PLAYER_KEY = (id: string) => `poker:player:${id}`; // playerId → roomId
 
 async function kvGetRoom(roomId: string): Promise<Room | null> {
-  if (IS_KV) {
-    const data = await kv.get<Room>(ROOM_KEY(roomId));
+  if (IS_REDIS && redis) {
+    const data = await redis.get<Room>(ROOM_KEY(roomId));
     return data ?? null;
   }
   return memoryRooms.get(roomId) ?? null;
 }
 
 async function kvSetRoom(room: Room): Promise<void> {
-  if (IS_KV) {
-    // 设置 24 小时过期（朋友玩不可能玩 24 小时一局）
-    await kv.set(ROOM_KEY(room.id), room, { ex: 86400 });
+  if (IS_REDIS && redis) {
+    // 24 小时过期
+    await redis.set(ROOM_KEY(room.id), room, { ex: 86400 });
   } else {
     memoryRooms.set(room.id, room);
   }
 }
 
 async function kvDeleteRoom(roomId: string): Promise<void> {
-  if (IS_KV) {
-    await kv.del(ROOM_KEY(roomId));
+  if (IS_REDIS && redis) {
+    await redis.del(ROOM_KEY(roomId));
   } else {
     memoryRooms.delete(roomId);
   }
 }
 
 async function kvGetRoomByPlayer(playerId: string): Promise<string | null> {
-  if (IS_KV) {
-    const data = await kv.get<string>(PLAYER_KEY(playerId));
+  if (IS_REDIS && redis) {
+    const data = await redis.get<string>(PLAYER_KEY(playerId));
     return data ?? null;
   }
   return memoryPlayerIndex.get(playerId) ?? null;
 }
 
 async function kvSetPlayerIndex(playerId: string, roomId: string): Promise<void> {
-  if (IS_KV) {
-    await kv.set(PLAYER_KEY(playerId), roomId, { ex: 86400 });
+  if (IS_REDIS && redis) {
+    await redis.set(PLAYER_KEY(playerId), roomId, { ex: 86400 });
   } else {
     memoryPlayerIndex.set(playerId, roomId);
   }
 }
 
 async function kvDeletePlayerIndex(playerId: string): Promise<void> {
-  if (IS_KV) {
-    await kv.del(PLAYER_KEY(playerId));
+  if (IS_REDIS && redis) {
+    await redis.del(PLAYER_KEY(playerId));
   } else {
     memoryPlayerIndex.delete(playerId);
   }
@@ -610,7 +617,7 @@ declare global {
   var __poker_disconnect_scanner__: NodeJS.Timeout | undefined;
 }
 
-if (!globalThis.__poker_disconnect_scanner__ && !IS_KV) {
+if (!globalThis.__poker_disconnect_scanner__ && !IS_REDIS) {
   // 注意：Vercel serverless 环境不会持续运行这个定时器
   // 生产环境主要依赖 heartbeat 主动检测（失联玩家 stop 发心跳）
   // KV 存储也可以加个 lastHeartbeat 索引 + 定期清理，但 MVP 先这样
