@@ -455,9 +455,11 @@ function skipToShowdown(room: Room): void {
 }
 
 export function calculateSidePots(
-  evaluated: { player: PlayerState; hand: EvaluatedHand }[]
+  evaluated: { player: PlayerState; hand: EvaluatedHand }[],
+  allPlayers: PlayerState[]
 ): SidePot[] {
-  const levels = [...new Set(evaluated.map(e => e.player.totalBetThisHand))]
+  // levels: 包含所有玩家（含 folded 玩家，他们投的钱是死钱，要算进 pot）
+  const levels = [...new Set(allPlayers.map(p => p.totalBetThisHand))]
     .filter(l => l > 0)
     .sort((a, b) => a - b);
 
@@ -466,9 +468,12 @@ export function calculateSidePots(
   for (const level of levels) {
     const contribution = level - prevLevel;
     if (contribution <= 0) continue;
+    // contributors: 所有投到这一层的玩家（含 folded），决定 pot 金额
+    const contributors = allPlayers.filter(p => p.totalBetThisHand >= level);
+    // eligible: 只算 active（没弃牌）且投到这一层的玩家，决定 pot 给谁分
     const eligible = evaluated.filter(e => e.player.totalBetThisHand >= level);
     pots.push({
-      amount: contribution * eligible.length,
+      amount: contribution * contributors.length,
       eligiblePlayerIds: eligible.map(e => e.player.id),
     });
     prevLevel = level;
@@ -493,7 +498,7 @@ function showdown(room: Room): void {
     hand: evaluateHand([...p.holeCards, ...room.communityCards]),
   }));
 
-  const sidePots = calculateSidePots(evaluated);
+  const sidePots = calculateSidePots(evaluated, room.players);
   room.sidePots = sidePots;
 
   const playerWinnings = new Map<string, { amount: number; pots: { potIndex: number; amount: number }[]; hand: EvaluatedHand }>();
