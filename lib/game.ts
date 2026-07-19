@@ -251,7 +251,10 @@ function startNewHand(room: Room): void {
   if (room.players.length < 2) return;
 
   room.handNumber++;
-  room.dealerIndex = (room.dealerIndex + 1) % room.players.length;
+  // 庄家轮转：第一手房主是庄家，从第二手开始顺时针轮转
+  if (room.handNumber > 1) {
+    room.dealerIndex = (room.dealerIndex + 1) % room.players.length;
+  }
   room.stage = 'preflop';
   room.communityCards = [];
   room.pot = 0;
