@@ -2,7 +2,7 @@
 // 混合各种场景：fold, call, raise, all-in
 const BASE = 'https://poker-mvp-liart.vercel.app';
 
-async function api(path, method = 'GET', body, retries = 3) {
+async function api(path, method = 'GET', body, retries = 5) {
   for (let i = 0; i < retries; i++) {
     try {
       const r = await fetch(BASE + path, {
@@ -13,7 +13,7 @@ async function api(path, method = 'GET', body, retries = 3) {
       return { status: r.status, data: await r.json().catch(() => ({})) };
     } catch (e) {
       if (i === retries - 1) throw e;
-      await new Promise(r => setTimeout(r, 500 * (i + 1)));
+      await new Promise(r => setTimeout(r, 1000 * (i + 1)));
     }
   }
 }
@@ -110,7 +110,9 @@ async function longGameTest(numPlayers, numHands, chips, seed) {
   while (handNum < numHands) {
     handNum++;
     const room = await playOneHand(roomId, ids, seed + handNum * 1000);
-    const total = room.players.reduce((s, p) => s + p.chips, 0);
+    const totalChips = room.players.reduce((s, p) => s + p.chips, 0);
+    // 包含 pot (如果手没跑完)
+    const total = totalChips + (room.pot || 0);
     const diff = total - initialTotal;
     const status = diff === 0 ? '✓' : (diff > 0 ? `+${diff}` : `${diff}`);
     const winnerInfo = room.lastWinners ?

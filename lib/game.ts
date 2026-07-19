@@ -404,7 +404,8 @@ function advanceGame(room: Room): void {
     return;
   }
 
-  const playersNeedAction = room.players.filter(p => !p.folded && !p.allIn);
+  // playersNeedAction: 没弃牌、没 all-in、还有筹码（chips=0 视为隐式 all-in）
+  const playersNeedAction = room.players.filter(p => !p.folded && !p.allIn && p.chips > 0);
   const allActed = playersNeedAction.length === 0 ||
     playersNeedAction.every(p => p.hasActed && p.currentBet === room.currentBet);
 
