@@ -119,8 +119,11 @@ async function allInScenario(name, numPlayers, startingChips) {
   });
   const roomId = create.data.roomId;
   const ids = [create.data.playerId];
+  const ALL_NAMES = ['Bob', 'Carol', 'Dan', 'Eve', 'Frank', 'Greg'];
   for (let i = 1; i < numPlayers; i++) {
-    const r = await api(`/api/rooms/${roomId}/join`, 'POST', { nickname: ['Bob', 'Carol'][i-1] });
+    const name = ALL_NAMES[i-1] || `P${i}`;
+    const r = await api(`/api/rooms/${roomId}/join`, 'POST', { nickname: name });
+    if (r.status !== 200) { fail(`P${i} (${name}) 加入`, JSON.stringify(r.data)); return; }
     ids.push(r.data.playerId);
   }
   ok(`${numPlayers} 人都加入, 房间 ${roomId}`);
@@ -128,13 +131,16 @@ async function allInScenario(name, numPlayers, startingChips) {
   const start = await api(`/api/rooms/${roomId}/start`, 'POST', { playerId: ids[0] });
   let room = start.data.room;
   let safety = 0;
+  console.log(`  开始: stage=${room.stage}, active=${room.players[room.activePlayerIndex]?.nickname}`);
   // 所有人都 all-in
   while (room.stage !== 'showdown' && room.stage !== 'ended' && safety++ < 20) {
-    if (room.activePlayerIndex === null) break;
+    if (room.activePlayerIndex === null) { console.log('  break: active=null'); break; }
     const pid = ids[room.activePlayerIndex];
+    const nick = room.players[room.activePlayerIndex].nickname;
     const r = await api(`/api/rooms/${roomId}/action`, 'POST', { playerId: pid, action: 'all_in' });
-    if (r.status !== 200) { fail(`all-in`, JSON.stringify(r.data)); return; }
+    if (r.status !== 200) { console.log('  '+nick+' FAILED:', JSON.stringify(r.data)); fail(`all-in`); return; }
     room = r.data.room;
+    console.log(`  iter ${safety}: ${nick} all-in → stage=${room.stage} pot=${room.pot}`);
   }
 
   console.log(`  → stage: ${room.stage}, status: ${room.status}, pot: ${room.pot}`);

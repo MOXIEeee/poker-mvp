@@ -80,17 +80,17 @@ async function runGame(numPlayers) {
     currentRoom = r.data.room;
   }
   ok(`全部 all-in 后 stage: ${currentRoom.stage}, status: ${currentRoom.status}`);
-  // 所有人 all-in 后应该进入 showdown_reveal（因为没人能再行动了）
-  assert(currentRoom.stage === 'showdown_reveal', '进入 showdown_reveal 阶段');
+  // 所有人 all-in 后应该直接进入 showdown（不阻塞）
+  assert(currentRoom.stage === 'showdown', '进入 showdown 阶段（不阻塞）');
 
-  // 7. 验证所有人都能做出 show/muck 决定
+  // 7. 验证所有人都能做出 show/muck 决定（纯展示 toggle，不阻塞）
   const remaining = currentRoom.players.filter(p => !p.folded);
   for (let i = 0; i < remaining.length; i++) {
     const p = remaining[i];
-    const choice = i % 2 === 0 ? 'show' : 'muck';
-    const r = await api(`/api/rooms/${roomId}/decide`, 'POST', { playerId: p.id, choice });
-    if (r.status !== 200) { fail(`${p.nickname} decide ${choice}`, JSON.stringify(r.data)); return; }
-    ok(`${p.nickname} 决定 ${choice}`);
+    const reveal = i % 2 === 0;
+    const r = await api(`/api/rooms/${roomId}/decide`, 'POST', { playerId: p.id, reveal });
+    if (r.status !== 200) { fail(`${p.nickname} toggle reveal=${reveal}`, JSON.stringify(r.data)); return; }
+    ok(`${p.nickname} toggle reveal=${reveal}`);
   }
 
   // 8. 最终状态验证
