@@ -21,7 +21,7 @@ export function ActionPanel({ room, me, onAction }: Props) {
   const [raiseAmount, setRaiseAmount] = useState(minRaise);
 
   const quickAmounts = [
-    { label: '×2', value: Math.min(callAmount * 2 + me.currentBet, me.chips) },
+    { label: '2BB', value: Math.min(room.settings.bigBlind * 2 + me.currentBet, me.chips) },
     { label: '½ 池', value: Math.min(Math.floor(room.pot / 2) + room.currentBet, me.chips) },
     { label: '全池', value: Math.min(room.pot + room.currentBet, me.chips) },
     { label: '全押', value: me.chips },

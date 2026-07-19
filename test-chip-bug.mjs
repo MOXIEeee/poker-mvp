@@ -91,11 +91,13 @@ async function deadMoneyTest() {
   console.log(`  总筹码 (含 pot): ${totalChips} = ? 应为 ${expected}`);
 
   const sidePotsTotal = (room.sidePots || []).reduce((s, p) => s + p.amount, 0);
-  console.log(`  sidePots 总和: ${sidePotsTotal}, pot (结算前): ${room.pot}`);
+  const winnersTotalWon = (room.lastWinners || []).reduce((s, w) => s + w.amountWon, 0);
+  console.log(`  sidePots 总和: ${sidePotsTotal}, 赢家 amountWon 总和: ${winnersTotalWon}, pot 结算后: ${room.pot}`);
 
   if (room.stage === 'showdown' || room.stage === 'ended') {
     assert(totalChips === expected, `筹码守恒 ${totalChips} = ${expected}`);
-    assert(sidePotsTotal === 0, `sidePots 应该被赢家拿走 (pot 清零)`, `actually ${sidePotsTotal}`);
+    assert(sidePotsTotal === winnersTotalWon, `sidePots 总和 = 赢家实际拿到的钱 (${sidePotsTotal} = ${winnersTotalWon})`);
+    assert(room.pot === 0, `pot 结算后清零`);
   }
 }
 

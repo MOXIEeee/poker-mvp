@@ -341,23 +341,28 @@ export async function processAction(
       break;
     }
     case 'raise': {
-      if (amount === undefined || amount < room.minRaise) {
-        return { error: `加注额必须至少为 ${room.minRaise}` };
+      if (amount === undefined || amount <= 0) {
+        return { error: '加注额必须大于 0' };
       }
       const actualAmount = Math.min(amount, player.chips);
       const actualTotalBet = player.currentBet + actualAmount;
       const raiseDiff = actualTotalBet - room.currentBet;
+      // 加注必须把总注额提到 room.currentBet 之上，且 raiseDiff >= minRaise
+      if (raiseDiff <= 0) {
+        return { error: '加注额太小（应该用跟注）' };
+      }
+      if (raiseDiff < room.minRaise) {
+        return { error: `加注增量必须至少为 ${room.minRaise}（当前差 ${raiseDiff}）` };
+      }
       player.chips -= actualAmount;
       player.currentBet = actualTotalBet;
       player.totalBetThisHand += actualAmount;
       room.pot += actualAmount;
-      if (raiseDiff > 0) {
-        if (raiseDiff >= room.minRaise) room.minRaise = raiseDiff;
-        room.currentBet = actualTotalBet;
-        room.players.forEach(p => {
-          if (!p.folded && !p.allIn && p.id !== player.id) p.hasActed = false;
-        });
-      }
+      room.minRaise = raiseDiff;
+      room.currentBet = actualTotalBet;
+      room.players.forEach(p => {
+        if (!p.folded && !p.allIn && p.id !== player.id) p.hasActed = false;
+      });
       player.lastAction = 'raise';
       player.lastActionAmount = actualAmount;
       player.hasActed = true;
