@@ -471,6 +471,8 @@ export function calculateSidePots(
 
   const pots: SidePot[] = [];
   let prevLevel = 0;
+  let deadMoney = 0; // 死钱累积：没有 active 玩家跟注的层级
+
   for (const level of levels) {
     const contribution = level - prevLevel;
     if (contribution <= 0) continue;
@@ -478,11 +480,31 @@ export function calculateSidePots(
     const contributors = allPlayers.filter(p => p.totalBetThisHand >= level);
     // eligible: 只算 active（没弃牌）且投到这一层的玩家，决定 pot 给谁分
     const eligible = evaluated.filter(e => e.player.totalBetThisHand >= level);
-    pots.push({
-      amount: contribution * contributors.length,
-      eligiblePlayerIds: eligible.map(e => e.player.id),
-    });
+    if (eligible.length === 0) {
+      // 死钱：这一层没人能分. 累积, 加到下一个有 eligible 的 pot
+      deadMoney += contribution * contributors.length;
+    } else {
+      pots.push({
+        amount: contribution * contributors.length + deadMoney,
+        eligiblePlayerIds: eligible.map(e => e.player.id),
+      });
+      deadMoney = 0;
+    }
     prevLevel = level;
+  }
+
+  // 剩余死钱（如最高层全是死钱）归到 main pot
+  if (deadMoney > 0) {
+    if (pots.length === 0) {
+      // 全是死钱：分给所有 active 玩家
+      pots.push({
+        amount: deadMoney,
+        eligiblePlayerIds: evaluated.map(e => e.player.id),
+      });
+    } else {
+      // 加到最后一个 pot
+      pots[pots.length - 1].amount += deadMoney;
+    }
   }
   return pots;
 }

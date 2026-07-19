@@ -195,5 +195,47 @@ console.log('--- calculateSidePots 单元测试 (新版：含死钱) ---\n');
   assert('总 pot = 150', total, 150);
 }
 
+// 场景 9：active 玩家全 0 chips (all-in for 0), 1 folded 投了 43
+// 死钱 43 应该归 main pot, 5 active 玩家平分
+{
+  const alice = activePlayer('a', 'Alice', 0, []);
+  const bob = activePlayer('b', 'Bob', 0, []);
+  const carol = activePlayer('c', 'Carol', 0, []);
+  const dan = activePlayer('d', 'Dan', 0, []);
+  const eve = foldedPlayer('e', 'Eve', 43);
+  const frank = activePlayer('f', 'Frank', 0, []);
+  const evaluated = [evalPlayer(alice), evalPlayer(bob), evalPlayer(carol), evalPlayer(dan), evalPlayer(frank)];
+  const pots = calculateSidePots(evaluated, [alice, bob, carol, dan, eve, frank]);
+  console.log('\n场景 9: 5 active (0 totalBet) + 1 folded (43 totalBet)');
+  console.log('  结果:', JSON.stringify(pots));
+  // 死钱 43 归 main pot, 5 active 玩家平分
+  assert('1 个 pot', pots.length, 1);
+  assert('pot 金额 43 (死钱)', pots[0].amount, 43);
+  assert('eligible 5 个 active', pots[0].eligiblePlayerIds.length, 5);
+}
+
+// 场景 10：active 玩家 + 多个 folded 投了不同额
+// Alice 100 (active), Bob 200 (fold), Carol 200 (fold)
+// pot = 100 + 200 + 200 = 500
+// 100 在 main pot (3 人投), 300 在死钱 (Bob/Carol excess)
+// Bob/Carol 各 100 在 main pot, 各 100 死钱
+// 最终 Alice 拿 500 (main pot 300 + 死钱 200)
+{
+  const alice = activePlayer('a', 'Alice', 100, []);
+  const bob = foldedPlayer('b', 'Bob', 200);
+  const carol = foldedPlayer('c', 'Carol', 200);
+  const evaluated = [evalPlayer(alice)];
+  const pots = calculateSidePots(evaluated, [alice, bob, carol]);
+  console.log('\n场景 10: 1 active (100) + 2 folded (200 each)');
+  console.log('  结果:', JSON.stringify(pots));
+  // levels=[100, 200]
+  // level=100: contributors=3, eligible=[Alice]. pot=300.
+  // level=200: contributors=2, eligible=[]. deadMoney=200.
+  // After loop: deadMoney=200, add to last pot → pot=500.
+  assert('1 个 pot', pots.length, 1);
+  assert('pot 金额 500', pots[0].amount, 500);
+  assert('eligible 只有 Alice', pots[0].eligiblePlayerIds, ['a']);
+}
+
 console.log(`\n=== ${pass} passed, ${fail} failed ===`);
 process.exit(fail > 0 ? 1 : 0);
