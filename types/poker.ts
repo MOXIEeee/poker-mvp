@@ -27,9 +27,16 @@ export interface EvaluatedHand {
   description: string;  // 比如 "葫芦，K 带 7"
 }
 
-export type GameStage = 'preflop' | 'flop' | 'turn' | 'river' | 'showdown' | 'ended';
+export type GameStage =
+  | 'preflop'          // 翻前下注
+  | 'flop'             // 翻牌圈
+  | 'turn'             // 转牌圈
+  | 'river'            // 河牌圈
+  | 'showdown_reveal'  // 摊牌前选择是否亮牌
+  | 'showdown'         // 摊牌结果
+  | 'ended';           // 本手结束
 
-export type PlayerAction = 'fold' | 'check' | 'call' | 'raise' | 'all_in';
+export type PlayerAction = 'fold' | 'check' | 'call' | 'raise' | 'all_in' | 'show' | 'muck';
 
 export interface PlayerState {
   id: string;              // socket id / session id
@@ -48,6 +55,9 @@ export interface PlayerState {
   lastActionAmount?: number;
   connected: boolean;
   lastHeartbeat: number;  // 最后心跳时间（用于失联检测）
+  // 摊牌阶段（showdown_reveal）专用
+  revealDecision?: 'show' | 'muck' | null;  // 是否已做出亮牌/弃牌决定
+  revealed: boolean;                        // true = 亮牌（其他人可见底牌）
 }
 
 export interface RoomSettings {
@@ -89,6 +99,11 @@ export interface Room {
   handNumber: number;       // 当前是第几手牌
   sidePots?: SidePot[];     // 边池明细（仅 showdown 时填充）
   lastWinners?: WinnerInfo[];
+  // 摊牌前阶段暂存数据（亮牌/弃牌阶段完成后才结算 lastWinners）
+  pendingShowdown?: {
+    evaluated: { playerId: string; hand: EvaluatedHand; totalBetThisHand: number }[];
+    sidePots: SidePot[];
+  };
   createdAt: number;
   updatedAt: number;
 }

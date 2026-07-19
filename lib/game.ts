@@ -111,6 +111,8 @@ export async function createRoom(settings: RoomSettings, hostNickname: string): 
     hasActed: false,
     connected: true,
     lastHeartbeat: Date.now(),
+    revealed: false,
+    revealDecision: null,
   };
 
   const room: Room = {
@@ -165,6 +167,8 @@ export async function joinRoom(
     hasActed: false,
     connected: true,
     lastHeartbeat: Date.now(),
+    revealed: false,
+    revealDecision: null,
   };
 
   room.players.push(newPlayer);
@@ -198,6 +202,8 @@ export async function leaveRoom(playerId: string): Promise<void> {
 
 // ==================== 牌局状态机 ====================
 
+// 找下一个能行动的玩家（从 fromIndex 之后开始顺时针）
+// 用于：翻前 UTG 起、翻后 SB 起、轮转找下一位
 function nextActiveIndex(room: Room, fromIndex: number): number | null {
   const n = room.players.length;
   for (let i = 1; i <= n; i++) {
@@ -260,6 +266,8 @@ function startNewHand(room: Room): void {
     p.hasActed = false;
     p.lastAction = undefined;
     p.lastActionAmount = undefined;
+    p.revealed = false;
+    p.revealDecision = null;
   });
 
   room.deck = shuffle(createDeck());
@@ -273,6 +281,10 @@ function startNewHand(room: Room): void {
 
   postBlinds(room);
 
+  // 翻前行动顺序：BB 之后第一个 active = UTG（heads-up 时 dealer/SB 先）
+  // - 2人: dealer=SB=0, BB=1 → 庄家(0) 先行动
+  // - 3人: D=0, SB=1, BB=2 → 庄家(0) 先行动（3人局无独立 UTG）
+  // - 4-6人: D=0, SB=1, BB=2, UTG=3+ → UTG 先行动
   const n = room.players.length;
   const bbIdx = (room.dealerIndex + (n === 2 ? 1 : 2)) % n;
   room.activePlayerIndex = nextActiveIndex(room, bbIdx);
@@ -462,12 +474,12 @@ export function calculateSidePots(
 }
 
 function showdown(room: Room): void {
-  room.stage = 'showdown';
   const activePlayers = room.players.filter(p => !p.folded);
 
   if (activePlayers.length === 0) {
     room.pot = 0;
     room.status = 'ended';
+    room.stage = 'ended';
     room.activePlayerIndex = null;
     return;
   }
@@ -479,6 +491,43 @@ function showdown(room: Room): void {
 
   const sidePots = calculateSidePots(evaluated);
   room.sidePots = sidePots;
+
+  // 先把每个非弃牌玩家的 revealed/decision 复位，等待亮牌/弃牌决定
+  for (const p of activePlayers) {
+    p.revealed = false;
+    p.revealDecision = null;
+  }
+
+  // 进入亮牌阶段：先暂存评估结果，每个人选完后再算 winners
+  room.pendingShowdown = {
+    evaluated: evaluated.map(e => ({
+      playerId: e.player.id,
+      hand: e.hand,
+      totalBetThisHand: e.player.totalBetThisHand,
+    })),
+    sidePots,
+  };
+  room.stage = 'showdown_reveal';
+  room.status = 'ended';
+  room.activePlayerIndex = null;
+}
+
+// 把 showdown_reveal 阶段的决定汇总为最终结果
+function finalizeShowdown(room: Room): void {
+  const pending = room.pendingShowdown;
+  if (!pending) {
+    // 没有 pending（理论上不该走到这里）
+    room.stage = 'ended';
+    return;
+  }
+
+  // 把玩家对象按 id 找回
+  const evaluated = pending.evaluated.map(e => {
+    const player = room.players.find(p => p.id === e.playerId)!;
+    return { player, hand: e.hand };
+  });
+
+  const sidePots = pending.sidePots;
 
   const playerWinnings = new Map<string, { amount: number; pots: { potIndex: number; amount: number }[]; hand: EvaluatedHand }>();
 
@@ -515,8 +564,40 @@ function showdown(room: Room): void {
     potsWon: info.pots,
   }));
   room.pot = 0;
-  room.status = 'ended';
+  room.stage = 'showdown';
+  room.pendingShowdown = undefined;
+  // status 保持 'ended'
   room.activePlayerIndex = null;
+}
+
+export async function decideShowdown(
+  roomId: string,
+  playerId: string,
+  choice: 'show' | 'muck'
+): Promise<{ ok: true; room: Room } | { error: string }> {
+  const room = await kvGetRoom(roomId);
+  if (!room) return { error: '房间不存在' };
+  if (room.stage !== 'showdown_reveal') return { error: '当前不在亮牌阶段' };
+
+  const player = room.players.find(p => p.id === playerId);
+  if (!player) return { error: '玩家不在房间内' };
+  if (player.folded) return { error: '你已经弃牌了' };
+  if (player.revealDecision) return { error: '你已经决定过了' };
+
+  player.revealDecision = choice;
+  player.revealed = choice === 'show';
+
+  // 检查所有未弃牌玩家是否都决定完了
+  const remaining = room.players.filter(p => !p.folded);
+  const allDecided = remaining.every(p => p.revealDecision !== null);
+
+  if (allDecided) {
+    finalizeShowdown(room);
+  }
+
+  room.updatedAt = Date.now();
+  await kvSetRoom(room);
+  return { ok: true, room };
 }
 
 function endHand(room: Room, winners: { id: string; chips: number }[]): void {

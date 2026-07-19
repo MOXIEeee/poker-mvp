@@ -139,6 +139,20 @@ export default function RoomPage() {
     // 不需要 fetchRoom，pusher 会推送更新
   };
 
+  // 亮牌 / 弃牌决定
+  const handleDecide = async (choice: 'show' | 'muck') => {
+    if (!playerId) return;
+    const res = await fetch(`/api/rooms/${roomId}/decide`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ playerId, choice }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setError(data.error || '操作失败');
+    }
+  };
+
   // 开始牌局
   const handleStart = async () => {
     if (!playerId) return;
@@ -292,7 +306,13 @@ export default function RoomPage() {
           <div className="space-y-4 sm:space-y-6">
             <PokerTable room={room} myPlayerId={playerId} />
 
-            {room.status === 'ended' ? (
+            {room.stage === 'showdown_reveal' ? (
+              <ShowdownRevealPanel
+                room={room}
+                myPlayerId={playerId}
+                onDecide={handleDecide}
+              />
+            ) : room.status === 'ended' ? (
               <ResultPanel room={room} myPlayerId={playerId} isHost={isHost} onStart={handleStart} />
             ) : isMyTurn && me ? (
               <ActionPanel
@@ -377,6 +397,7 @@ function stageName(stage: string): string {
     flop: '翻牌',
     turn: '转牌',
     river: '河牌',
+    showdown_reveal: '亮牌选择',
     showdown: '摊牌',
     ended: '已结束',
   };
@@ -440,6 +461,11 @@ function PokerTable({ room, myPlayerId }: { room: Room; myPlayerId: string }) {
                   <Card card={player.holeCards[0]} size="md" highlight={isActive} />
                   <Card card={player.holeCards[1]} size="md" highlight={isActive} />
                 </>
+              ) : player.revealed ? (
+                <>
+                  <Card card={player.holeCards[0]} size="md" />
+                  <Card card={player.holeCards[1]} size="md" />
+                </>
               ) : (
                 <>
                   <Card faceDown size="md" />
@@ -498,12 +524,13 @@ function PokerTable({ room, myPlayerId }: { room: Room; myPlayerId: string }) {
 function renderCommunityCards(room: Room) {
   const allSlots = 5;
   const cards = room.communityCards;
-  // 翻前：0 张；翻牌：3 张；转牌：4 张；河牌/摊牌/结束：5 张
+  // 翻前：0 张；翻牌：3 张；转牌：4 张；河牌/亮牌/摊牌/结束：5 张
   const stageOrder: Record<string, number> = {
     preflop: 0,
     flop: 3,
     turn: 4,
     river: 5,
+    showdown_reveal: 5,
     showdown: 5,
     ended: 5,
   };
@@ -589,10 +616,105 @@ function WaitingPanel({ activePlayer }: { activePlayer: { nickname: string } | n
   );
 }
 
+// 亮牌/弃牌选择阶段
+function ShowdownRevealPanel({
+  room,
+  myPlayerId,
+  onDecide,
+}: {
+  room: Room;
+  myPlayerId: string;
+  onDecide: (choice: 'show' | 'muck') => void;
+}) {
+  const me = room.players.find(p => p.id === myPlayerId);
+  const remaining = room.players.filter(p => !p.folded);
+  const decidedCount = remaining.filter(p => p.revealDecision !== null).length;
+  const myDecision = me?.revealDecision;
+
+  return (
+    <div className="bg-slate-900/70 backdrop-blur-xl rounded-2xl p-6 border border-white/5 space-y-4">
+      <div className="text-center space-y-2">
+        <div className="text-3xl">🃏</div>
+        <h3 className="text-xl font-bold">本手结束 · 选择是否亮牌</h3>
+        <p className="text-sm text-slate-400">
+          已决定 {decidedCount} / {remaining.length} 人
+        </p>
+      </div>
+
+      {me && !me.folded && !myDecision && (
+        <div className="flex justify-center gap-3">
+          <button
+            onClick={() => onDecide('show')}
+            className="px-6 py-3 rounded-xl bg-yellow-500 hover:bg-yellow-400 text-slate-900 font-bold transition-colors flex items-center gap-2"
+          >
+            <span>👁️</span>
+            <span>亮牌</span>
+            <span className="text-xs opacity-80">给所有人看</span>
+          </button>
+          <button
+            onClick={() => onDecide('muck')}
+            className="px-6 py-3 rounded-xl bg-slate-700 hover:bg-slate-600 text-white font-bold transition-colors flex items-center gap-2"
+          >
+            <span>🗑️</span>
+            <span>弃牌</span>
+            <span className="text-xs opacity-80">隐藏底牌</span>
+          </button>
+        </div>
+      )}
+
+      {me && !me.folded && myDecision && (
+        <div className="text-center">
+          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-800/60 border border-white/10 text-slate-300">
+            {myDecision === 'show' ? (
+              <>
+                <span>👁️</span>
+                <span>你选择了<strong className="text-yellow-300 mx-1">亮牌</strong></span>
+              </>
+            ) : (
+              <>
+                <span>🗑️</span>
+                <span>你选择了<strong className="text-slate-200 mx-1">弃牌隐藏</strong></span>
+              </>
+            )}
+            <span className="text-slate-500">· 等待其他玩家...</span>
+          </div>
+        </div>
+      )}
+
+      {/* 其他人状态 */}
+      <div className="flex justify-center gap-2 flex-wrap text-xs">
+        {remaining.map(p => {
+          if (p.id === myPlayerId) return null;
+          return (
+            <div
+              key={p.id}
+              className={cn(
+                'px-2.5 py-1 rounded-full border',
+                p.revealDecision === 'show'
+                  ? 'bg-yellow-500/10 border-yellow-500/30 text-yellow-300'
+                  : p.revealDecision === 'muck'
+                  ? 'bg-slate-800/50 border-slate-600/40 text-slate-400'
+                  : 'bg-slate-800/30 border-slate-700/40 text-slate-500 animate-pulse'
+              )}
+            >
+              {p.nickname}
+              {' '}
+              {p.revealDecision === 'show' && '👁️ 亮牌'}
+              {p.revealDecision === 'muck' && '🗑️ 隐藏'}
+              {!p.revealDecision && '... 决定中'}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function ResultPanel({ room, myPlayerId, isHost, onStart }: { room: Room; myPlayerId: string; isHost: boolean; onStart: () => void }) {
   const winners = room.lastWinners || [];
   const sidePots = room.sidePots || [];
   const hasMultiplePots = sidePots.length > 1;
+  const winnerIds = new Set(winners.map(w => w.playerId));
 
   return (
     <div className="bg-slate-900/70 backdrop-blur-xl rounded-2xl p-6 border border-white/5 space-y-4">
@@ -633,12 +755,19 @@ function ResultPanel({ room, myPlayerId, isHost, onStart }: { room: Room; myPlay
       <div className="text-center space-y-3">
         {winners.map((w, i) => {
           const player = room.players.find(p => p.id === w.playerId);
+          if (!player) return null;
           return (
-            <div key={i} className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-3 inline-block min-w-[280px]">
+            <div key={i} className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-3 inline-block min-w-[300px]">
               <div className="text-yellow-300 font-bold text-lg">
-                {player?.nickname} 赢了 +${w.amountWon}
+                {player.nickname} 赢了 +${w.amountWon}
               </div>
               <div className="text-sm text-slate-400 mt-1">{w.hand.description}</div>
+              {player.revealed && player.holeCards.length === 2 && (
+                <div className="flex items-center justify-center gap-1.5 mt-2">
+                  <Card card={player.holeCards[0]} size="sm" />
+                  <Card card={player.holeCards[1]} size="sm" />
+                </div>
+              )}
               {hasMultiplePots && w.potsWon.length > 1 && (
                 <div className="text-xs text-slate-500 mt-2 flex items-center justify-center gap-1 flex-wrap">
                   来自：
@@ -653,6 +782,35 @@ function ResultPanel({ room, myPlayerId, isHost, onStart }: { room: Room; myPlay
           );
         })}
       </div>
+
+      {/* 其他亮牌玩家的底牌（不参与胜者展示） */}
+      {room.players.some(p => !p.folded && p.revealed && !winnerIds.has(p.id)) && (
+        <div className="max-w-2xl mx-auto pt-2 border-t border-white/5">
+          <div className="text-xs text-slate-400 mb-2 text-center">其他亮牌玩家</div>
+          <div className="flex flex-wrap gap-3 justify-center">
+            {room.players
+              .filter(p => !p.folded && p.revealed && !winnerIds.has(p.id))
+              .map(p => (
+                <div key={p.id} className="bg-slate-800/50 border border-white/5 rounded-lg p-2 flex items-center gap-2">
+                  <div className="flex gap-1">
+                    <Card card={p.holeCards[0]} size="sm" />
+                    <Card card={p.holeCards[1]} size="sm" />
+                  </div>
+                  <div className="text-xs text-slate-300">{p.nickname}</div>
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
+
+      {/* 弃牌（muck）的玩家提示 */}
+      {room.players.some(p => !p.folded && p.revealDecision === 'muck' && !winnerIds.has(p.id)) && (
+        <div className="text-center text-xs text-slate-500">
+          {room.players.filter(p => !p.folded && p.revealDecision === 'muck' && !winnerIds.has(p.id))
+            .map(p => p.nickname).join('、')}
+          {' '}选择了弃牌隐藏
+        </div>
+      )}
 
       <div className="text-center">
         {isHost && (
