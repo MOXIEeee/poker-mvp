@@ -19,7 +19,7 @@ export default function RoomPage() {
   const [playerId, setPlayerId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
-  const [chatOpen, setChatOpen] = useState(true);
+  const [chatOpen, setChatOpen] = useState(false);
   const [chatMessages, setChatMessages] = useState<{ playerId: string; nickname: string; text: string; time: number }[]>([]);
   const [chatInput, setChatInput] = useState('');
   const channelRef = useRef<ReturnType<typeof getRoomChannel>>(null);
