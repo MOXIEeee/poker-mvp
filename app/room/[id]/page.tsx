@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import type { Room, PlayerAction } from '@/types/poker';
+import type { Room, PlayerAction, PlayerState } from '@/types/poker';
 import { Card } from '@/components/Card';
 import { ActionPanel } from '@/components/ActionPanel';
 import { Lobby } from '@/components/Lobby';
@@ -327,7 +327,7 @@ export default function RoomPage() {
         )}
       </main>
 
-      {/* 聊天面板（可关闭） */}
+      {/* 桌面端：固定右侧聊天面板 */}
       {(room.status === 'waiting' || room.status === 'playing') && chatOpen && (
         <aside className="hidden lg:flex fixed right-4 top-24 bottom-4 w-72 bg-slate-900/70 backdrop-blur-xl rounded-2xl border border-white/5 flex-col z-20">
           <div className="p-3 border-b border-white/5 flex items-center justify-between">
@@ -371,7 +371,7 @@ export default function RoomPage() {
         </aside>
       )}
 
-      {/* 打开聊天按钮（聊天关闭时显示） */}
+      {/* 桌面端：折叠的聊天按钮 */}
       {(room.status === 'waiting' || room.status === 'playing') && !chatOpen && (
         <button
           onClick={() => setChatOpen(true)}
@@ -386,6 +386,72 @@ export default function RoomPage() {
             </span>
           )}
         </button>
+      )}
+
+      {/* 手机端：浮动聊天按钮 + 弹出 modal */}
+      {(room.status === 'waiting' || room.status === 'playing') && (
+        <button
+          onClick={() => setChatOpen(!chatOpen)}
+          className="lg:hidden fixed bottom-4 right-4 z-30 bg-blue-600 hover:bg-blue-500 text-white w-12 h-12 rounded-full shadow-2xl flex items-center justify-center text-xl"
+          title="聊天"
+        >
+          💬
+          {chatMessages.length > 0 && (
+            <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 font-bold">
+              {chatMessages.length}
+            </span>
+          )}
+        </button>
+      )}
+
+      {/* 手机端：聊天 modal */}
+      {(room.status === 'waiting' || room.status === 'playing') && chatOpen && (
+        <div className="lg:hidden fixed inset-0 z-40 flex items-end" onClick={() => setChatOpen(false)}>
+          <div className="absolute inset-0 bg-black/60" />
+          <div
+            className="relative w-full bg-slate-900 rounded-t-2xl border-t border-white/10 max-h-[70vh] flex flex-col"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="p-3 border-b border-white/5 flex items-center justify-between">
+              <span className="font-semibold text-sm">💬 牌桌聊天</span>
+              <button
+                onClick={() => setChatOpen(false)}
+                className="text-slate-500 hover:text-slate-200 text-sm px-2 py-1 rounded hover:bg-white/5"
+              >
+                关闭 ✕
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-3 space-y-2 text-sm">
+              {chatMessages.length === 0 ? (
+                <div className="text-slate-500 text-xs text-center py-8">还没有消息</div>
+              ) : (
+                chatMessages.map((m, i) => (
+                  <div key={i}>
+                    <span className={cn(
+                      'font-semibold',
+                      m.playerId === playerId ? 'text-yellow-400' : 'text-blue-400'
+                    )}>
+                      {m.nickname}:
+                    </span>{' '}
+                    <span className="text-slate-300">{m.text}</span>
+                  </div>
+                ))
+              )}
+              <div ref={chatEndRef} />
+            </div>
+            <form onSubmit={handleSendChat} className="p-3 border-t border-white/5 flex gap-2">
+              <input
+                value={chatInput}
+                onChange={e => setChatInput(e.target.value)}
+                placeholder="说点什么..."
+                maxLength={200}
+                className="flex-1 bg-slate-800/80 rounded-lg px-3 py-2.5 text-sm border border-white/5 focus:border-yellow-500/50 focus:outline-none"
+                autoFocus
+              />
+              <button type="submit" className="bg-blue-600 hover:bg-blue-500 px-4 py-2.5 rounded-lg text-sm font-medium">发送</button>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -403,127 +469,237 @@ function stageName(stage: string): string {
   return map[stage] || stage;
 }
 
-// 牌桌组件（保持不变）
+// 牌桌组件：手机用列表式布局，桌面用椭圆桌
 function PokerTable({ room, myPlayerId }: { room: Room; myPlayerId: string }) {
   const totalSlots = room.settings.maxPlayers;
   const myIndex = room.players.findIndex(p => p.id === myPlayerId);
   const positions = getPlayerPositions(totalSlots, myIndex);
 
-  return (
-    <div className="poker-table relative rounded-[140px] sm:rounded-[200px] aspect-[1.7/1] mx-auto max-w-5xl border-[6px] sm:border-[10px] border-amber-900/50">
-      <div className="absolute inset-3 sm:inset-4 rounded-[120px] sm:rounded-[180px] border border-yellow-700/20 pointer-events-none" />
+  const me = room.players.find(p => p.id === myPlayerId);
+  const opponents = room.players.filter(p => p.id !== myPlayerId);
 
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-2 sm:gap-3 w-full px-4">
-        <div className="flex items-center gap-2 sm:gap-3 bg-slate-900/40 backdrop-blur px-3 sm:px-4 py-1 sm:py-1.5 rounded-full border border-yellow-500/20">
-          <div className="flex -space-x-1">
-            <span className="w-3 h-3 sm:w-4 sm:h-4 rounded-full bg-gradient-to-br from-yellow-300 to-amber-600 border border-white/20" />
-            <span className="w-3 h-3 sm:w-4 sm:h-4 rounded-full bg-gradient-to-br from-red-300 to-red-700 border border-white/20" />
-            <span className="w-3 h-3 sm:w-4 sm:h-4 rounded-full bg-gradient-to-br from-emerald-300 to-emerald-700 border border-white/20" />
+  return (
+    <>
+      {/* 手机版：列表式布局 */}
+      <div className="md:hidden space-y-3">
+        {/* 公共牌 + 底池 + 阶段 */}
+        <div className="poker-table rounded-2xl border-4 border-amber-900/50 p-4 flex flex-col items-center gap-3 min-h-[160px] justify-center">
+          <div className="flex items-center gap-2 bg-slate-900/40 backdrop-blur px-3 py-1 rounded-full border border-yellow-500/20">
+            <div className="flex -space-x-1">
+              <span className="w-3 h-3 rounded-full bg-gradient-to-br from-yellow-300 to-amber-600 border border-white/20" />
+              <span className="w-3 h-3 rounded-full bg-gradient-to-br from-red-300 to-red-700 border border-white/20" />
+              <span className="w-3 h-3 rounded-full bg-gradient-to-br from-emerald-300 to-emerald-700 border border-white/20" />
+            </div>
+            <span className="text-[10px] text-yellow-300/80">底池</span>
+            <span className="text-base font-bold text-yellow-300">$ {room.pot}</span>
           </div>
-          <span className="text-[10px] sm:text-xs text-yellow-300/80">底池</span>
-          <span className="text-base sm:text-xl font-bold text-yellow-300">$ {room.pot}</span>
+          <div className="flex gap-1 justify-center min-h-[64px] items-center">
+            {renderCommunityCards(room, 'sm')}
+          </div>
+          <div className="text-[9px] text-slate-400 tracking-widest">
+            {stageName(room.stage).toUpperCase()}
+          </div>
         </div>
-        <div className="flex gap-1 sm:gap-2">
-          {renderCommunityCards(room)}
-        </div>
-        <div className="text-[9px] sm:text-[10px] text-slate-400 tracking-widest">
-          {stageName(room.stage).toUpperCase()}
-        </div>
+
+        {/* 对手 (手机版：一排水平显示 3-6 个) */}
+        {opponents.length > 0 && (
+          <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-1 px-1">
+            {opponents.map((player) => (
+              <MobilePlayerCard
+                key={player.id}
+                player={player}
+                isActive={room.activePlayerIndex === room.players.findIndex(p => p.id === player.id)}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* 自己的牌 */}
+        {me && <MyHandMobile player={me} isActive={room.activePlayerIndex === room.players.findIndex(p => p.id === me.id)} />}
       </div>
 
-      {room.players.map((player, idx) => {
-        const pos = positions[idx];
-        if (!pos) return null;
-        const isActive = room.activePlayerIndex === idx;
-        const isMe = player.id === myPlayerId;
-        return (
-          <div
-            key={player.id}
-            className={cn(
-              'absolute flex flex-col items-center gap-1.5 transition-all',
-              pos.className
-            )}
-          >
-            {player.isDealer && (
-              <div className="absolute -top-2 -left-2 sm:-top-3 sm:-left-3 bg-white text-slate-900 rounded-full w-6 h-6 sm:w-7 sm:h-7 flex items-center justify-center text-[10px] sm:text-xs font-bold shadow-lg z-10">D</div>
-            )}
-            {player.isSmallBlind && (
-              <div className="absolute -top-2 -right-2 sm:-top-3 sm:-right-3 bg-yellow-500 text-slate-900 rounded-full w-6 h-6 sm:w-7 sm:h-7 flex items-center justify-center text-[10px] sm:text-xs font-bold shadow-lg z-10">SB</div>
-            )}
-            {player.isBigBlind && (
-              <div className="absolute -top-2 -right-2 sm:-top-3 sm:-right-3 bg-orange-500 text-white rounded-full w-6 h-6 sm:w-7 sm:h-7 flex items-center justify-center text-[10px] sm:text-xs font-bold shadow-lg z-10">BB</div>
-            )}
+      {/* 桌面版：椭圆桌 + 4 角玩家 */}
+      <div className="hidden md:block">
+        <div className="poker-table relative rounded-[200px] aspect-[1.7/1] mx-auto max-w-5xl border-[10px] border-amber-900/50">
+          <div className="absolute inset-4 rounded-[180px] border border-yellow-700/20 pointer-events-none" />
 
-            <div className="flex gap-1 sm:gap-1.5">
-              {isMe ? (
-                <>
-                  <Card card={player.holeCards[0]} size="md" highlight={isActive} />
-                  <Card card={player.holeCards[1]} size="md" highlight={isActive} />
-                </>
-              ) : player.revealed ? (
-                <>
-                  <Card card={player.holeCards[0]} size="md" />
-                  <Card card={player.holeCards[1]} size="md" />
-                </>
-              ) : (
-                <>
-                  <Card faceDown size="md" />
-                  <Card faceDown size="md" />
-                </>
-              )}
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-3 w-full px-4">
+            <div className="flex items-center gap-3 bg-slate-900/40 backdrop-blur px-4 py-1.5 rounded-full border border-yellow-500/20">
+              <div className="flex -space-x-1">
+                <span className="w-4 h-4 rounded-full bg-gradient-to-br from-yellow-300 to-amber-600 border border-white/20" />
+                <span className="w-4 h-4 rounded-full bg-gradient-to-br from-red-300 to-red-700 border border-white/20" />
+                <span className="w-4 h-4 rounded-full bg-gradient-to-br from-emerald-300 to-emerald-700 border border-white/20" />
+              </div>
+              <span className="text-xs text-yellow-300/80">底池</span>
+              <span className="text-xl font-bold text-yellow-300">$ {room.pot}</span>
             </div>
-
-            <div className={cn(
-              'rounded-full px-2.5 sm:px-3 py-1 text-[10px] sm:text-xs flex items-center gap-1.5 sm:gap-2 border border-white/10',
-              isActive
-                ? 'bg-yellow-400 text-slate-900 font-bold animate-pulse'
-                : isMe
-                ? 'bg-blue-500/20 text-blue-300 font-bold'
-                : player.folded
-                ? 'bg-slate-900/60 text-slate-500 line-through opacity-60'
-                : 'bg-slate-900/85 text-white'
-            )}>
-              {isActive && <span>★</span>}
-              <span className="font-medium">{isMe ? `${player.nickname}(我)` : player.nickname}</span>
-              <span className={cn('font-bold', isActive ? 'text-slate-900' : 'text-yellow-400')}>
-                ${player.chips.toLocaleString()}
-              </span>
-              {player.lastAction && !isActive && (
-                <span className="text-[9px] sm:text-[10px] text-slate-400">
-                  {actionLabel(player.lastAction, player.lastActionAmount)}
-                </span>
-              )}
+            <div className="flex gap-2">
+              {renderCommunityCards(room, 'md')}
+            </div>
+            <div className="text-[10px] text-slate-400 tracking-widest">
+              {stageName(room.stage).toUpperCase()}
             </div>
           </div>
-        );
-      })}
 
-      {Array.from({ length: totalSlots - room.players.length }).map((_, i) => {
-        const slotIndex = room.players.length + i;
-        const pos = positions[slotIndex];
-        if (!pos) return null;
-        return (
-          <div
-            key={`empty-${i}`}
-            className={cn(
-              'absolute flex items-center justify-center',
-              pos.className
-            )}
-          >
-            <div className="border-2 border-dashed border-white/10 rounded-full px-3 py-1.5 text-[10px] sm:text-xs text-slate-500">
-              等待加入
-            </div>
-          </div>
-        );
-      })}
+          {room.players.map((player, idx) => {
+            const pos = positions[idx];
+            if (!pos) return null;
+            const isActive = room.activePlayerIndex === idx;
+            const isMe = player.id === myPlayerId;
+            return (
+              <div
+                key={player.id}
+                className={cn(
+                  'absolute flex flex-col items-center gap-1.5 transition-all',
+                  pos.className
+                )}
+              >
+                {player.isDealer && (
+                  <div className="absolute -top-3 -left-3 bg-white text-slate-900 rounded-full w-7 h-7 flex items-center justify-center text-xs font-bold shadow-lg z-10">D</div>
+                )}
+                {player.isSmallBlind && (
+                  <div className="absolute -top-3 -right-3 bg-yellow-500 text-slate-900 rounded-full w-7 h-7 flex items-center justify-center text-xs font-bold shadow-lg z-10">SB</div>
+                )}
+                {player.isBigBlind && (
+                  <div className="absolute -top-3 -right-3 bg-orange-500 text-white rounded-full w-7 h-7 flex items-center justify-center text-xs font-bold shadow-lg z-10">BB</div>
+                )}
+
+                <div className="flex gap-1.5">
+                  {isMe ? (
+                    <>
+                      <Card card={player.holeCards[0]} size="lg" highlight={isActive} />
+                      <Card card={player.holeCards[1]} size="lg" highlight={isActive} />
+                    </>
+                  ) : player.revealed ? (
+                    <>
+                      <Card card={player.holeCards[0]} size="md" />
+                      <Card card={player.holeCards[1]} size="md" />
+                    </>
+                  ) : (
+                    <>
+                      <Card faceDown size="md" />
+                      <Card faceDown size="md" />
+                    </>
+                  )}
+                </div>
+
+                <div className={cn(
+                  'rounded-full px-3 py-1 text-xs flex items-center gap-2 border border-white/10',
+                  isActive
+                    ? 'bg-yellow-400 text-slate-900 font-bold animate-pulse'
+                    : isMe
+                    ? 'bg-blue-500/20 text-blue-300 font-bold'
+                    : player.folded
+                    ? 'bg-slate-900/60 text-slate-500 line-through opacity-60'
+                    : 'bg-slate-900/85 text-white'
+                )}>
+                  {isActive && <span>★</span>}
+                  <span className="font-medium">{isMe ? `${player.nickname}(我)` : player.nickname}</span>
+                  <span className={cn('font-bold', isActive ? 'text-slate-900' : 'text-yellow-400')}>
+                    ${player.chips.toLocaleString()}
+                  </span>
+                  {player.lastAction && !isActive && (
+                    <span className="text-[10px] text-slate-400">
+                      {actionLabel(player.lastAction, player.lastActionAmount)}
+                    </span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+
+          {Array.from({ length: totalSlots - room.players.length }).map((_, i) => {
+            const slotIndex = room.players.length + i;
+            const pos = positions[slotIndex];
+            if (!pos) return null;
+            return (
+              <div
+                key={`empty-${i}`}
+                className={cn(
+                  'absolute flex items-center justify-center',
+                  pos.className
+                )}
+              >
+                <div className="border-2 border-dashed border-white/10 rounded-full px-3 py-1.5 text-xs text-slate-500">
+                  等待加入
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </>
+  );
+}
+
+// 手机版：单个对手卡片（横向一排）
+function MobilePlayerCard({ player, isActive }: { player: PlayerState; isActive: boolean }) {
+  return (
+    <div className={cn(
+      'flex-shrink-0 flex flex-col items-center gap-1 px-2 py-2 rounded-xl border min-w-[80px]',
+      isActive
+        ? 'bg-yellow-400/15 border-yellow-400 animate-pulse'
+        : player.folded
+        ? 'bg-slate-900/40 border-white/5 opacity-50'
+        : 'bg-slate-900/70 border-white/10'
+    )}>
+      {player.isDealer && <span className="text-[9px] text-white bg-slate-700 rounded-full w-4 h-4 flex items-center justify-center font-bold">D</span>}
+      {player.isSmallBlind && <span className="text-[9px] text-slate-900 bg-yellow-500 rounded-full w-4 h-4 flex items-center justify-center font-bold">SB</span>}
+      {player.isBigBlind && <span className="text-[9px] text-white bg-orange-500 rounded-full w-4 h-4 flex items-center justify-center font-bold">BB</span>}
+      <div className="flex gap-0.5">
+        {player.revealed ? (
+          <>
+            <Card card={player.holeCards[0]} size="sm" />
+            <Card card={player.holeCards[1]} size="sm" />
+          </>
+        ) : (
+          <>
+            <Card faceDown size="sm" />
+            <Card faceDown size="sm" />
+          </>
+        )}
+      </div>
+      <div className="text-[10px] font-medium truncate max-w-[80px]">{player.nickname}</div>
+      <div className="text-[10px] text-yellow-400 font-bold">${player.chips.toLocaleString()}</div>
+      {player.lastAction && !isActive && !player.folded && (
+        <div className="text-[9px] text-slate-500">{actionLabel(player.lastAction, player.lastActionAmount)}</div>
+      )}
+      {player.folded && <div className="text-[9px] text-slate-500 line-through">弃牌</div>}
     </div>
   );
 }
 
-function renderCommunityCards(room: Room) {
+// 手机版：自己的手牌（下方大显示）
+function MyHandMobile({ player, isActive }: { player: PlayerState; isActive: boolean }) {
+  return (
+    <div className={cn(
+      'poker-table rounded-2xl border-4 p-3 flex items-center justify-center gap-3 min-h-[100px]',
+      isActive ? 'border-yellow-400 shadow-lg shadow-yellow-500/20' : 'border-amber-900/50'
+    )}>
+      <div className="flex flex-col items-start gap-1 flex-1">
+        <div className="flex items-center gap-1.5">
+          {player.isDealer && <span className="text-[9px] text-white bg-slate-700 rounded-full w-4 h-4 flex items-center justify-center font-bold">D</span>}
+          {player.isSmallBlind && <span className="text-[9px] text-slate-900 bg-yellow-500 rounded-full w-4 h-4 flex items-center justify-center font-bold">SB</span>}
+          {player.isBigBlind && <span className="text-[9px] text-white bg-orange-500 rounded-full w-4 h-4 flex items-center justify-center font-bold">BB</span>}
+          <span className="text-sm font-bold">你</span>
+        </div>
+        <div className="text-xs text-yellow-400 font-bold">${player.chips.toLocaleString()}</div>
+        {isActive && <div className="text-[10px] text-yellow-300 animate-pulse">★ 你的回合</div>}
+        {player.lastAction && !isActive && (
+          <div className="text-[10px] text-slate-400">{actionLabel(player.lastAction, player.lastActionAmount)}</div>
+        )}
+      </div>
+      <div className="flex gap-2">
+        <Card card={player.holeCards[0]} size="md" highlight={isActive} />
+        <Card card={player.holeCards[1]} size="md" highlight={isActive} />
+      </div>
+    </div>
+  );
+}
+
+function renderCommunityCards(room: Room, size: 'sm' | 'md' = 'md') {
   const allSlots = 5;
   const cards = room.communityCards;
-  // 翻前：0 张；翻牌：3 张；转牌：4 张；河牌/摊牌/结束：5 张
   const stageOrder: Record<string, number> = {
     preflop: 0,
     flop: 3,
@@ -533,17 +709,19 @@ function renderCommunityCards(room: Room) {
     ended: 5,
   };
   const visibleCount = stageOrder[room.stage] ?? 0;
+  const placeholderSize = size === 'sm' ? 'w-9 h-12' : 'w-12 h-16 sm:w-14 sm:h-20';
 
   return Array.from({ length: allSlots }).map((_, i) => {
     if (i < visibleCount && cards[i]) {
-      return <Card key={i} card={cards[i]} size="md" />;
+      return <Card key={i} card={cards[i]} size={size} />;
     }
     if (i < visibleCount) {
-      return <Card key={i} faceDown size="md" />;
+      return <Card key={i} faceDown size={size} />;
     }
-    return <div key={i} className="w-12 h-16 sm:w-14 sm:h-20 rounded-md border-2 border-dashed border-white/20" />;
+    return <div key={i} className={cn(placeholderSize, 'rounded-md border-2 border-dashed border-white/20')} />;
   });
 }
+
 
 function getPlayerPositions(totalSlots: number, myIndex: number) {
   const allClasses: Record<number, string[]> = {
