@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { toggleReveal } from '@/lib/game';
 import { notifyRoom } from '@/lib/pusher-server';
+import { track } from '@/lib/analytics-server';
 
 // 亮牌/弃牌 toggle（纯展示性，不影响结算）
 export async function POST(
@@ -26,5 +27,14 @@ export async function POST(
     return NextResponse.json({ error: result.error }, { status: 400 });
   }
   await notifyRoom(id, 'room-updated', { room: result.room });
+
+  // 埋点：show / muck 选择
+  await track({
+    name: reveal ? 'show_hand' : 'muck_hand',
+    rid: id,
+    pid: playerId,
+    props: { hand_number: result.room.handNumber },
+  });
+
   return NextResponse.json({ room: result.room });
 }

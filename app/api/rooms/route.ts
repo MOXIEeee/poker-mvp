@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createRoom } from '@/lib/game';
 import { notifyRoom } from '@/lib/pusher-server';
+import { track } from '@/lib/analytics-server';
 import type { RoomSettings } from '@/types/poker';
 
 export async function POST(req: NextRequest) {
@@ -38,6 +39,20 @@ export async function POST(req: NextRequest) {
   const room = await createRoom(settings, nickname.trim());
   // 通知频道（虽然没人订阅，先留着）
   await notifyRoom(room.id, 'room-updated', { room });
+
+  // 埋点：创建房间成功
+  await track({
+    name: 'create_room_success',
+    rid: room.id,
+    pid: room.hostId,
+    props: {
+      max_players: maxPlayers,
+      small_blind: smallBlind,
+      big_blind: bigBlind,
+      starting_chips: startingChips,
+      has_password: !!password,
+    },
+  });
 
   return NextResponse.json({
     roomId: room.id,

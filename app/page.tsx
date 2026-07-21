@@ -1,15 +1,33 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { CreateRoomForm } from '@/components/CreateRoomForm';
 import { JoinRoomForm } from '@/components/JoinRoomForm';
 import { cn } from '@/lib/utils';
 import { Sparkles, Users } from 'lucide-react';
+import { track, trackCtx } from '@/lib/analytics-client';
 
 type Tab = 'create' | 'join';
 
 export default function HomePage() {
   const [tab, setTab] = useState<Tab>('create');
+
+  useEffect(() => {
+    // 进入首页
+    let hasHistory = false;
+    try {
+      hasHistory = !!localStorage.getItem('poker_visited_v1');
+      localStorage.setItem('poker_visited_v1', '1');
+    } catch {
+      // ignore
+    }
+    track('home_view', { has_history: hasHistory, tab });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    track('tab_switch', { tab });
+  }, [tab]);
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4">

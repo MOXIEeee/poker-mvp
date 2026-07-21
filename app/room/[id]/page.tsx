@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/Button';
 import { Copy, LogOut, Crown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getRoomChannel } from '@/lib/pusher-client';
+import { track, trackCtx, setContext } from '@/lib/analytics-client';
 
 export default function RoomPage() {
   const params = useParams();
@@ -24,6 +25,10 @@ export default function RoomPage() {
   const [chatInput, setChatInput] = useState('');
   const channelRef = useRef<ReturnType<typeof getRoomChannel>>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  // 埋点用：记录进入房间时间 + 上一手编号
+  const roomEnteredAtRef = useRef<number>(Date.now());
+  const lastHandNumberRef = useRef<number>(0);
+  const pusherConnectedRef = useRef<boolean>(false);
 
   // 初始化：从 sessionStorage 取 playerId，尝试 reconnect
   useEffect(() => {
@@ -33,6 +38,9 @@ export default function RoomPage() {
       return;
     }
     setPlayerId(pid);
+    // 埋点：绑定上下文 + 进入房间
+    setContext({ pid, rid: roomId });
+    track('room_view', { is_reconnect: true });
 
     // 尝试重连
     fetch(`/api/rooms/${roomId}/reconnect`, {
@@ -47,6 +55,7 @@ export default function RoomPage() {
           sessionStorage.removeItem(`poker_${roomId}`);
           sessionStorage.removeItem(`poker_nick_${roomId}`);
           setError(`重连失败：${data.error}。请回首页重新加入。`);
+          track('reconnect_fail', { reason: data.error });
         } else {
           setRoom(data.room);
         }
@@ -56,6 +65,33 @@ export default function RoomPage() {
         // 网络错误不重置 sessionStorage，下次刷新再试
       });
   }, [roomId]);
+
+  // 埋点：session_end / pagehide / pageshow
+  useEffect(() => {
+    const onHide = () => {
+      track('page_hidden', {
+        session_duration_ms: Date.now() - roomEnteredAtRef.current,
+        hands_played: lastHandNumberRef.current,
+      });
+    };
+    const onShow = () => {
+      track('page_visible', {});
+    };
+    const onBeforeUnload = () => {
+      track('session_end', {
+        session_duration_ms: Date.now() - roomEnteredAtRef.current,
+        hands_played: lastHandNumberRef.current,
+      });
+    };
+    window.addEventListener('pagehide', onHide);
+    window.addEventListener('pageshow', onShow);
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => {
+      window.removeEventListener('pagehide', onHide);
+      window.removeEventListener('pageshow', onShow);
+      window.removeEventListener('beforeunload', onBeforeUnload);
+    };
+  }, []);
 
   // 心跳：每 10 秒发一次（用于服务端失联检测）
   useEffect(() => {
@@ -97,7 +133,28 @@ export default function RoomPage() {
         setRoom(data.room);
       };
       const onGameUpdate = (data: { room: Room }) => {
-        setRoom(data.room);
+        setRoom((prev) => {
+          // 埋点：hand_complete（handNumber 增加时上一手结束）
+          if (prev && data.room.handNumber > prev.handNumber && prev.handNumber > 0) {
+            const prevShowdown = prev.stage === 'showdown';
+            track('hand_complete', {
+              hand_number: prev.handNumber,
+              pot: prev.pot,
+              winners_count: prev.lastWinners?.length ?? 0,
+              reached_showdown: prevShowdown,
+              players_alive: prev.players.filter((p) => p.chips > 0).length,
+            });
+          }
+          // 埋点：showdown 进入
+          if (data.room.stage === 'showdown' && (!prev || prev.stage !== 'showdown')) {
+            track('showdown', {
+              hand_number: data.room.handNumber,
+              community_count: data.room.communityCards.length,
+            });
+          }
+          lastHandNumberRef.current = data.room.handNumber;
+          return data.room;
+        });
       };
       const onChat = (msg: { playerId: string; nickname: string; text: string; time: number }) => {
         setChatMessages(prev => [...prev, msg]);
@@ -107,11 +164,36 @@ export default function RoomPage() {
       channel.bind('game-updated', onGameUpdate);
       channel.bind('pusher:subscription_succeeded', () => {
         console.log('[Pusher] Subscribed to room:', roomId);
+        if (!pusherConnectedRef.current) {
+          pusherConnectedRef.current = true;
+          track('pusher_connected', {});
+        }
+      });
+      channel.bind('pusher:subscription_error', (err: unknown) => {
+        track('pusher_error', { stage: 'subscription', reason: String(err) });
       });
       channel.bind('chat-message', onChat);
+
+      // 全局 pusher 断连检测
+      const pusher = (channel as unknown as { pusher?: { connection?: { bind: (e: string, h: (...a: unknown[]) => void) => void } } }).pusher;
+      if (pusher?.connection) {
+        pusher.connection.bind('disconnected', () => {
+          if (pusherConnectedRef.current) {
+            pusherConnectedRef.current = false;
+            track('pusher_disconnected', {});
+          }
+        });
+        pusher.connection.bind('connected', () => {
+          if (!pusherConnectedRef.current) {
+            pusherConnectedRef.current = true;
+            track('pusher_reconnected', {});
+          }
+        });
+      }
     } else {
       // 兜底：Pusher 不可用时用轮询
       console.warn('[Pusher] unavailable, using polling fallback');
+      track('pusher_unavailable', {});
       const interval = setInterval(fetchRoom, 1500);
       return () => clearInterval(interval);
     }
@@ -127,14 +209,19 @@ export default function RoomPage() {
   // 玩家行动
   const handleAction = async (action: PlayerAction, amount?: number) => {
     if (!playerId) return;
+    const t0 = Date.now();
     const res = await fetch(`/api/rooms/${roomId}/action`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ playerId, action, amount }),
     });
+    const latency = Date.now() - t0;
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
       setError(data.error || '操作失败');
+      track('api_error', { endpoint: 'action', status: res.status, latency_ms: latency, reason: data.error });
+    } else {
+      track('api_latency', { endpoint: 'action', latency_ms: latency });
     }
     // 不需要 fetchRoom，pusher 会推送更新
   };
@@ -164,6 +251,7 @@ export default function RoomPage() {
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
       setError(data.error || '开始失败');
+      track('start_hand_fail', { reason: data.error });
     }
   };
 
@@ -176,6 +264,11 @@ export default function RoomPage() {
 
   // 退出
   const handleLeave = () => {
+    track('leave_room', {
+      session_duration_ms: Date.now() - roomEnteredAtRef.current,
+      hands_played: lastHandNumberRef.current,
+      reason: 'manual',
+    });
     sessionStorage.removeItem(`poker_${roomId}`);
     sessionStorage.removeItem(`poker_nick_${roomId}`);
     router.push('/');
@@ -187,6 +280,7 @@ export default function RoomPage() {
     if (!chatInput.trim() || !playerId) return;
     const text = chatInput.trim();
     setChatInput('');
+    track('chat_send', { text_length: text.length });
     const res = await fetch(`/api/rooms/${roomId}/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -194,6 +288,7 @@ export default function RoomPage() {
     });
     if (!res.ok) {
       console.error('Chat send failed');
+      track('chat_send_fail', {});
     }
   };
 

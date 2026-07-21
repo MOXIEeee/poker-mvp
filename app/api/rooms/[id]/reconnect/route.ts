@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { reconnectPlayer } from '@/lib/game';
 import { notifyRoom } from '@/lib/pusher-server';
+import { track } from '@/lib/analytics-server';
 
 export async function POST(
   req: NextRequest,
@@ -16,9 +17,20 @@ export async function POST(
 
   const result = await reconnectPlayer(id, playerId);
   if ('error' in result) {
+    await track({
+      name: 'reconnect_fail',
+      rid: id,
+      pid: playerId,
+      props: { reason: result.error },
+    });
     return NextResponse.json({ error: result.error }, { status: 400 });
   }
   // 通知房间内其他人
   await notifyRoom(id, 'room-updated', { room: result.room });
+  await track({
+    name: 'reconnect_success',
+    rid: id,
+    pid: playerId,
+  });
   return NextResponse.json({ room: result.room, player: result.player });
 }

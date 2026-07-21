@@ -7,7 +7,7 @@ import { Redis } from '@upstash/redis';
 // ==================== 存储层：Upstash Redis (生产) + 内存 Map (本地 dev) ====================
 
 // Upstash Redis 启用条件：有 UPSTASH_REDIS_REST_URL + TOKEN
-const IS_REDIS = !!process.env.UPSTASH_REDIS_REST_URL && !!process.env.UPSTASH_REDIS_REST_TOKEN;
+export const IS_REDIS = !!process.env.UPSTASH_REDIS_REST_URL && !!process.env.UPSTASH_REDIS_REST_TOKEN;
 
 const redis = IS_REDIS
   ? new Redis({
@@ -15,6 +15,11 @@ const redis = IS_REDIS
       token: process.env.UPSTASH_REDIS_REST_TOKEN!,
     })
   : null;
+
+// 暴露给其他模块（如埋点）共用同一个 Redis 客户端
+export function getRedis(): Redis | null {
+  return redis;
+}
 
 // 本地 dev 用内存 Map（生产环境绝对不能 fallback）
 const memoryRooms = new Map<string, Room>();
