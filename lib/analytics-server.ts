@@ -46,6 +46,7 @@ export async function track(event: Omit<AnalyticsEvent, 't' | 'server'>): Promis
   }
   try {
     const redis = getRedis();
+    if (!redis) return;
     const full: AnalyticsEvent = {
       ...event,
       t: Date.now(),
@@ -79,6 +80,7 @@ export async function queryEvents(opts: {
   if (!IS_REDIS) return [];
   const { hours = 24, name, limit = 200 } = opts;
   const redis = getRedis();
+  if (!redis) return [];
   const now = Date.now();
   const startMs = now - hours * 3600_000;
   // 拉可能跨天的所有 key（今天 + 起始那一天）

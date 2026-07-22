@@ -15,7 +15,7 @@ type Metrics = {
       label: string;
       count: number;
       conversionFromPrev: number | null;
-      conversionFromTop: number | null;
+      conversionFromTop: number;
     }>;
   };
   topFails: Array<{ name: string; count: number }>;
@@ -428,11 +428,12 @@ function Card({
   sub?: string;
   accent?: 'green' | 'blue' | 'yellow';
 }) {
-  const accentClass = {
+  const accentMap: Record<'green' | 'blue' | 'yellow', string> = {
     green: 'from-emerald-500/20 to-emerald-500/5 border-emerald-500/30',
     blue: 'from-sky-500/20 to-sky-500/5 border-sky-500/30',
     yellow: 'from-yellow-500/20 to-yellow-500/5 border-yellow-500/30',
-  }[accent ?? ''] ?? 'from-slate-700/30 to-slate-800/30 border-slate-700';
+  };
+  const accentClass = accent ? accentMap[accent] : 'from-slate-700/30 to-slate-800/30 border-slate-700';
   return (
     <div
       className={`rounded-xl border bg-gradient-to-br p-4 ${accentClass}`}
