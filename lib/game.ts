@@ -118,7 +118,6 @@ export async function createRoom(settings: RoomSettings, hostNickname: string): 
     lastHeartbeat: Date.now(),
     revealed: false,
     mucked: false,
-    isSpectator: false,
   };
 
   const room: Room = {
@@ -152,7 +151,9 @@ export async function joinRoom(
 ): Promise<{ room: Room; playerId: string } | { error: string }> {
   const room = await kvGetRoom(roomId);
   if (!room) return { error: '房间不存在' };
-  if (room.status !== 'waiting' && room.status !== 'ended' && room.status !== 'playing') {
+  // 牌局间隙（大厅/手牌间隙）允许加入，正在进行中的牌局不允许
+  if (room.status === 'playing') return { error: '牌局进行中，请等这手结束后再加入' };
+  if (room.status !== 'waiting' && room.status !== 'ended') {
     return { error: '房间当前不可加入' };
   }
   if (room.players.length >= room.settings.maxPlayers) return { error: '房间已满' };
@@ -160,8 +161,6 @@ export async function joinRoom(
   if (room.players.some(p => p.nickname === nickname)) return { error: '昵称已被使用' };
 
   const playerId = `player_${nanoid(10)}`;
-  // 牌局进行中加入 → 默认观战(本手牌不能行动 / 不参与 pot / 下一手自动转正)
-  const isSpectator = room.status === 'playing';
   const newPlayer: PlayerState = {
     id: playerId,
     nickname,
@@ -179,7 +178,6 @@ export async function joinRoom(
     lastHeartbeat: Date.now(),
     revealed: false,
     mucked: false,
-    isSpectator,
   };
 
   room.players.push(newPlayer);
@@ -220,50 +218,38 @@ function nextActiveIndex(room: Room, fromIndex: number): number | null {
   for (let i = 1; i <= n; i++) {
     const idx = (fromIndex + i) % n;
     const p = room.players[idx];
-    if (p.isSpectator) continue;  // 观战者跳过
     if (!p.folded && !p.allIn && p.chips > 0) return idx;
   }
   return null;
 }
 
 function postBlinds(room: Room): void {
-  // 只考虑非观战玩家
-  const activePlayers = room.players.filter(p => !p.isSpectator);
-  const n = activePlayers.length;
+  const n = room.players.length;
   if (n < 2) return;
-  // dealerIndex 仍然是全局索引，先找出 active players 中的 dealer 位置
   const dealerIdx = room.dealerIndex;
-  // 在 active players 中找 dealer 之后第一个、第二个作为 SB / BB
-  const dealerInActive = activePlayers.findIndex(p => p.id === room.players[dealerIdx].id);
-  const sbIdxInActive = n === 2 ? dealerInActive : (dealerInActive + 1) % n;
-  const bbIdxInActive = (dealerInActive + (n === 2 ? 1 : 2)) % n;
-  const sbPlayer = activePlayers[sbIdxInActive];
-  const bbPlayer = activePlayers[bbIdxInActive];
+  const sbIdx = n === 2 ? dealerIdx : (dealerIdx + 1) % n;
+  const bbIdx = (dealerIdx + (n === 2 ? 1 : 2)) % n;
 
-  // 清除所有玩家的盲注标记
-  room.players.forEach(p => {
-    p.isDealer = false;
-    p.isSmallBlind = false;
-    p.isBigBlind = false;
+  room.players.forEach((p, i) => {
+    p.isDealer = i === dealerIdx;
+    p.isSmallBlind = i === sbIdx;
+    p.isBigBlind = i === bbIdx;
   });
-  // 设置活跃玩家的角色
-  const dealerPlayer = activePlayers[dealerInActive];
-  dealerPlayer.isDealer = true;
-  sbPlayer.isSmallBlind = true;
-  bbPlayer.isBigBlind = true;
 
-  const sbAmount = Math.min(room.settings.smallBlind, sbPlayer.chips);
-  const bbAmount = Math.min(room.settings.bigBlind, bbPlayer.chips);
+  const sb = room.players[sbIdx];
+  const bb = room.players[bbIdx];
+  const sbAmount = Math.min(room.settings.smallBlind, sb.chips);
+  const bbAmount = Math.min(room.settings.bigBlind, bb.chips);
 
-  sbPlayer.chips -= sbAmount;
-  sbPlayer.currentBet = sbAmount;
-  sbPlayer.totalBetThisHand = sbAmount;
-  if (sbPlayer.chips === 0) sbPlayer.allIn = true;
+  sb.chips -= sbAmount;
+  sb.currentBet = sbAmount;
+  sb.totalBetThisHand = sbAmount;
+  if (sb.chips === 0) sb.allIn = true;
 
-  bbPlayer.chips -= bbAmount;
-  bbPlayer.currentBet = bbAmount;
-  bbPlayer.totalBetThisHand = bbAmount;
-  if (bbPlayer.chips === 0) bbPlayer.allIn = true;
+  bb.chips -= bbAmount;
+  bb.currentBet = bbAmount;
+  bb.totalBetThisHand = bbAmount;
+  if (bb.chips === 0) bb.allIn = true;
 
   room.pot = sbAmount + bbAmount;
   room.currentBet = bbAmount;
@@ -274,16 +260,9 @@ function startNewHand(room: Room): void {
   if (room.players.length < 2) return;
 
   room.handNumber++;
-  // 庄家轮转：第一手房主是庄家，从第二手开始顺时针轮转（跳过观战者）
+  // 庄家轮转：第一手房主是庄家，从第二手开始顺时针轮转
   if (room.handNumber > 1) {
-    const n = room.players.length;
-    let nextDealer = (room.dealerIndex + 1) % n;
-    // 跳过观战者，最多绕一圈
-    for (let i = 0; i < n; i++) {
-      if (!room.players[nextDealer].isSpectator) break;
-      nextDealer = (nextDealer + 1) % n;
-    }
-    room.dealerIndex = nextDealer;
+    room.dealerIndex = (room.dealerIndex + 1) % room.players.length;
   }
   room.stage = 'preflop';
   room.communityCards = [];
@@ -303,15 +282,9 @@ function startNewHand(room: Room): void {
     p.mucked = false;
   });
 
-  // 观战者：保留 isSpectator=true 标记（在他们中间是观战者）
-  // 牌局开始时只给非 spectator 发牌
   room.deck = shuffle(createDeck());
   let remaining = room.deck;
   for (const player of room.players) {
-    if (player.isSpectator) {
-      // 观战者不参与本手牌，holeCards 留空
-      continue;
-    }
     const { cards, remaining: r } = dealHoleCards(remaining);
     player.holeCards = cards;
     remaining = r;
@@ -342,10 +315,6 @@ export async function processAction(
   if (!room) return { error: '房间不存在' };
   if (room.status !== 'playing') return { error: '牌局未开始或已结束' };
   if (room.activePlayerIndex === null) return { error: '当前没有可行动的玩家' };
-
-  // spectator 拒绝优先级最高（先于"不是你的回合"）
-  const spectator = room.players.find(p => p.id === playerId);
-  if (spectator?.isSpectator) return { error: '观战中无法行动' };
 
   const player = room.players[room.activePlayerIndex];
   if (!player || player.id !== playerId) return { error: '不是你的回合' };
@@ -438,14 +407,14 @@ export async function processAction(
 }
 
 function advanceGame(room: Room): void {
-  const activePlayers = room.players.filter(p => !p.folded && !p.isSpectator);
+  const activePlayers = room.players.filter(p => !p.folded);
   if (activePlayers.length === 1) {
     endHand(room, [activePlayers[0]]);
     return;
   }
 
-  // playersNeedAction: 没弃牌、没 all-in、还有筹码（chips=0 视为隐式 all-in）、不是观战者
-  const playersNeedAction = room.players.filter(p => !p.folded && !p.allIn && p.chips > 0 && !p.isSpectator);
+  // playersNeedAction: 没弃牌、没 all-in、还有筹码（chips=0 视为隐式 all-in）
+  const playersNeedAction = room.players.filter(p => !p.folded && !p.allIn && p.chips > 0);
   const allActed = playersNeedAction.length === 0 ||
     playersNeedAction.every(p => p.hasActed && p.currentBet === room.currentBet);
 
@@ -550,7 +519,7 @@ export function calculateSidePots(
 }
 
 function showdown(room: Room): void {
-  const activePlayers = room.players.filter(p => !p.folded && !p.isSpectator);
+  const activePlayers = room.players.filter(p => !p.folded);
 
   if (activePlayers.length === 0) {
     room.pot = 0;
@@ -623,7 +592,6 @@ export async function toggleReveal(
 
   const player = room.players.find(p => p.id === playerId);
   if (!player) return { error: '玩家不在房间内' };
-  if (player.isSpectator) return { error: '观战者没有手牌可亮' };
   if (player.folded) return { error: '你已经弃牌了，不能亮牌' };
 
   player.revealed = reveal;
@@ -660,9 +628,7 @@ export async function startHandByHost(roomId: string, hostId: string): Promise<{
   const room = await kvGetRoom(roomId);
   if (!room) return { error: '房间不存在' };
   if (room.hostId !== hostId) return { error: '只有房主可以开始牌局' };
-  // 实际能打的玩家数（非观战者）
-  const activeCount = room.players.filter(p => !p.isSpectator).length;
-  if (activeCount < 2) return { error: '至少需要 2 名非观战玩家' };
+  if (room.players.length < 2) return { error: '至少需要 2 名玩家' };
 
   if (room.status === 'ended') {
     resetRoomForNextHand(room);
@@ -683,10 +649,6 @@ function resetRoomForNextHand(room: Room): void {
     p.hasActed = false;
     p.lastAction = undefined;
     p.lastActionAmount = undefined;
-    p.revealed = false;
-    p.mucked = false;
-    // 新一手牌：所有观战者转正，正常参与
-    p.isSpectator = false;
   });
   room.communityCards = [];
   room.pot = 0;

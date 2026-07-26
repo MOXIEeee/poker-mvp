@@ -57,7 +57,6 @@ export interface PlayerState {
   // 亮牌/弃牌（纯展示性 toggle，不阻塞结算）
   revealed: boolean;        // true = 亮牌（其他人可见底牌）
   mucked: boolean;          // true = 主动弃牌隐藏（即使赢了也不亮）
-  isSpectator: boolean;     // 观战中（本手牌不能行动 / 不参与 pot，下一手自动转正）
 }
 
 export interface RoomSettings {

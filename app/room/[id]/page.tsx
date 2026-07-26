@@ -409,14 +409,12 @@ export default function RoomPage() {
                 onStart={handleStart}
                 onToggleReveal={handleToggleReveal}
               />
-            ) : isMyTurn && me && !me.isSpectator ? (
+            ) : isMyTurn && me ? (
               <ActionPanel
                 room={room}
                 me={me}
                 onAction={handleAction}
               />
-            ) : me?.isSpectator ? (
-              <SpectatorPanel room={room} />
             ) : (
               <WaitingPanel activePlayer={activePlayer} />
             )}
@@ -660,16 +658,9 @@ function PokerTable({ room, myPlayerId }: { room: Room; myPlayerId: string }) {
                 {player.isBigBlind && (
                   <div className="absolute -top-3 -right-3 bg-orange-500 text-white rounded-full w-7 h-7 flex items-center justify-center text-xs font-bold shadow-lg z-10">BB</div>
                 )}
-                {player.isSpectator && (
-                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-slate-600 text-white rounded-full px-2.5 py-1 text-[10px] font-medium shadow-lg z-10">观战</div>
-                )}
 
-                <div className={cn('flex gap-1.5', player.isSpectator && 'opacity-50 grayscale')}>
-                  {player.isSpectator ? (
-                    <div className="flex flex-col items-center justify-center w-20 h-24 border-2 border-dashed border-slate-500 rounded-lg text-slate-500 text-xs">
-                      等待中
-                    </div>
-                  ) : isMe ? (
+                <div className="flex gap-1.5">
+                  {isMe ? (
                     <>
                       <Card card={player.holeCards[0]} size="lg" highlight={isActive} />
                       <Card card={player.holeCards[1]} size="lg" highlight={isActive} />
@@ -740,11 +731,9 @@ function PokerTable({ room, myPlayerId }: { room: Room; myPlayerId: string }) {
 function MobilePlayerCard({ player, isActive }: { player: PlayerState; isActive: boolean }) {
   return (
     <div className={cn(
-      'flex-shrink-0 flex flex-col items-center gap-1 px-2 py-2 rounded-xl border min-w-[80px] relative',
+      'flex-shrink-0 flex flex-col items-center gap-1 px-2 py-2 rounded-xl border min-w-[80px]',
       isActive
         ? 'bg-yellow-400/15 border-yellow-400 animate-pulse'
-        : player.isSpectator
-        ? 'bg-slate-900/30 border-dashed border-slate-600 opacity-60'
         : player.folded
         ? 'bg-slate-900/40 border-white/5 opacity-50'
         : 'bg-slate-900/70 border-white/10'
@@ -752,13 +741,8 @@ function MobilePlayerCard({ player, isActive }: { player: PlayerState; isActive:
       {player.isDealer && <span className="text-[9px] text-white bg-slate-700 rounded-full w-4 h-4 flex items-center justify-center font-bold">D</span>}
       {player.isSmallBlind && <span className="text-[9px] text-slate-900 bg-yellow-500 rounded-full w-4 h-4 flex items-center justify-center font-bold">SB</span>}
       {player.isBigBlind && <span className="text-[9px] text-white bg-orange-500 rounded-full w-4 h-4 flex items-center justify-center font-bold">BB</span>}
-      {player.isSpectator && (
-        <span className="absolute -top-1 -right-1 text-[8px] text-white bg-slate-600 rounded-full px-1.5 py-0.5 font-medium">观战</span>
-      )}
       <div className="flex gap-0.5">
-        {player.isSpectator ? (
-          <div className="text-slate-500 text-[10px] px-2 py-1">🚫</div>
-        ) : player.revealed ? (
+        {player.revealed ? (
           <>
             <Card card={player.holeCards[0]} size="sm" />
             <Card card={player.holeCards[1]} size="sm" />
@@ -782,21 +766,6 @@ function MobilePlayerCard({ player, isActive }: { player: PlayerState; isActive:
 
 // 手机版：自己的手牌（下方大显示）
 function MyHandMobile({ player, isActive }: { player: PlayerState; isActive: boolean }) {
-  if (player.isSpectator) {
-    return (
-      <div className="rounded-2xl border-4 border-dashed border-slate-600 bg-slate-900/30 p-3 flex items-center justify-center gap-3 min-h-[100px]">
-        <div className="flex flex-col items-start gap-1 flex-1">
-          <div className="flex items-center gap-1.5">
-            <span className="text-[9px] text-white bg-slate-600 rounded-full px-2 py-0.5 font-medium">观战中</span>
-            <span className="text-sm font-bold">你</span>
-          </div>
-          <div className="text-xs text-yellow-400 font-bold">${player.chips.toLocaleString()}</div>
-          <div className="text-[10px] text-slate-400">等这手结束，下一手就能打</div>
-        </div>
-        <div className="text-3xl opacity-50">🚫</div>
-      </div>
-    );
-  }
   return (
     <div className={cn(
       'poker-table rounded-2xl border-4 p-3 flex items-center justify-center gap-3 min-h-[100px]',
@@ -913,24 +882,6 @@ function WaitingPanel({ activePlayer }: { activePlayer: { nickname: string } | n
           <span className="w-2 h-2 bg-yellow-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
         </div>
         等待 <span className="text-yellow-400 font-bold mx-1">{activePlayer?.nickname || '...'}</span> 行动
-      </div>
-    </div>
-  );
-}
-
-function SpectatorPanel({ room }: { room: Room }) {
-  const activeCount = room.players.filter(p => !p.isSpectator).length;
-  return (
-    <div className="bg-slate-900/70 backdrop-blur-xl rounded-2xl p-6 border-2 border-dashed border-slate-600 text-center">
-      <div className="inline-flex flex-col items-center gap-2 text-slate-300">
-        <div className="text-3xl">👀</div>
-        <div className="font-bold">观战中</div>
-        <div className="text-sm text-slate-400">
-          这手牌你不能行动 · 等这手结束，下一手自动参与
-        </div>
-        <div className="text-xs text-slate-500 mt-1">
-          当前 {activeCount} 名玩家在打
-        </div>
       </div>
     </div>
   );
