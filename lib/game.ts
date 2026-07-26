@@ -151,7 +151,11 @@ export async function joinRoom(
 ): Promise<{ room: Room; playerId: string } | { error: string }> {
   const room = await kvGetRoom(roomId);
   if (!room) return { error: '房间不存在' };
-  if (room.status !== 'waiting') return { error: '牌局已开始，无法加入' };
+  // 牌局间隙（大厅/手牌间隙）允许加入，正在进行中的牌局不允许
+  if (room.status === 'playing') return { error: '牌局进行中，请等这手结束后再加入' };
+  if (room.status !== 'waiting' && room.status !== 'ended') {
+    return { error: '房间当前不可加入' };
+  }
   if (room.players.length >= room.settings.maxPlayers) return { error: '房间已满' };
   if (room.settings.password && room.settings.password !== password) return { error: '房间密码错误' };
   if (room.players.some(p => p.nickname === nickname)) return { error: '昵称已被使用' };

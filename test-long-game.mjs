@@ -19,7 +19,7 @@ async function api(path, method = 'GET', body, retries = 5) {
 }
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-const ALL_NAMES = ['Alice', 'Bob', 'Carol', 'Dan', 'Eve', 'Frank'];
+const ALL_NAMES = ['Alice', 'Bob', 'Carol', 'Dan', 'Eve', 'Frank', 'Grace', 'Henry', 'Ivy'];
 
 async function createRoom(numPlayers, chips) {
   const create = await api('/api/rooms', 'POST', {
@@ -138,7 +138,16 @@ async function longGameTest(numPlayers, numHands, chips, seed) {
 }
 
 const results = [];
-for (const [n, hands, seed] of [[2, 20, 42], [3, 20, 100], [4, 20, 200], [5, 20, 300], [6, 20, 400]]) {
+for (const [n, hands, seed] of [
+  [2, 20, 42],
+  [3, 20, 100],
+  [4, 20, 200],
+  [5, 20, 300],
+  [6, 20, 400],
+  [7, 15, 500],
+  [8, 15, 600],
+  [9, 15, 700],
+]) {
   const ok = await longGameTest(n, hands, 1000, seed);
   results.push({ n, hands, ok });
   await sleep(1000);

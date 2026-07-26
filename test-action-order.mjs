@@ -1,10 +1,10 @@
-// 全面测试 2-6 人局 preflop/postflop 行动顺序
+// 全面测试 2-9 人局 preflop/postflop 行动顺序
 // 规则：
 // - 2人 heads-up: 翻前 dealer/SB 先，翻后 BB 先
 // - 3人: 翻前 dealer 先（无独立 UTG），翻后 SB 先
 // - 4-6人: 翻前 UTG 先（BB 的下一位），翻后 SB 先
 
-const BASE = 'https://poker-mvp-liart.vercel.app';
+const BASE = 'http://localhost:3000';
 
 async function api(path, method = 'GET', body) {
   const r = await fetch(BASE + path, {
@@ -20,7 +20,7 @@ function fail(name, msg) { console.log(`  ❌ ${name}: ${msg}`); process.exitCod
 function assert(cond, name, detail) { if (cond) ok(name); else fail(name, detail || '断言失败'); }
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-const NICKNAMES = ['Alice', 'Bob', 'Carol', 'Dan', 'Eve', 'Frank'];
+const NICKNAMES = ['Alice', 'Bob', 'Carol', 'Dan', 'Eve', 'Frank', 'Grace', 'Henry', 'Ivy'];
 
 async function runGame(numPlayers) {
   console.log(`\n=== ${numPlayers} 人局 ===`);
@@ -102,9 +102,9 @@ async function runGame(numPlayers) {
   assert(r.pot === 0, 'pot 清零', `actually ${r.pot}`);
 }
 
-for (const n of [2, 3, 4, 5, 6]) {
+for (const n of [2, 3, 4, 5, 6, 7, 8, 9]) {
   await runGame(n);
   await sleep(1000); // 防止请求过快
 }
 
-console.log('\n' + (process.exitCode ? '❌ 部分测试失败' : '🎉 2-6 人局行动顺序全部正确'));
+console.log('\n' + (process.exitCode ? '❌ 部分测试失败' : '🎉 2-9 人局行动顺序全部正确'));

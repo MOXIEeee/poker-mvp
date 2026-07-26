@@ -70,7 +70,7 @@ export function CreateRoomForm() {
             onChange={e => setMaxPlayers(Number(e.target.value))}
             className="w-full bg-slate-800 border border-white/10 rounded-lg px-3 py-2 text-white focus:border-yellow-500/50 focus:outline-none"
           >
-            {[2, 3, 4, 5, 6].map(n => (
+            {[2, 3, 4, 5, 6, 7, 8, 9].map(n => (
               <option key={n} value={n}>{n} 人</option>
             ))}
           </select>

@@ -18,8 +18,8 @@ export async function POST(req: NextRequest) {
   if (!nickname?.trim()) {
     return NextResponse.json({ error: '昵称不能为空' }, { status: 400 });
   }
-  if (maxPlayers < 2 || maxPlayers > 6) {
-    return NextResponse.json({ error: '玩家数必须在 2-6 之间' }, { status: 400 });
+  if (maxPlayers < 2 || maxPlayers > 9) {
+    return NextResponse.json({ error: '玩家数必须在 2-9 之间' }, { status: 400 });
   }
   if (smallBlind < 1 || bigBlind < smallBlind * 2) {
     return NextResponse.json({ error: '盲注设置不合理' }, { status: 400 });

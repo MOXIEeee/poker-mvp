@@ -60,7 +60,7 @@ export interface PlayerState {
 }
 
 export interface RoomSettings {
-  maxPlayers: number;       // 2-6
+  maxPlayers: number;       // 2-9
   smallBlind: number;
   bigBlind: number;
   startingChips: number;
