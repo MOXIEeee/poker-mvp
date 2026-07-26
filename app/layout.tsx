@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { SoundToggle } from "@/components/SoundToggle";
+import { BGMToggle } from "@/components/BGMToggle";
 
 export const metadata: Metadata = {
   title: "德州扑克 · 朋友间开一局",
@@ -24,6 +25,7 @@ export default function RootLayout({
     <html lang="zh-CN" className="h-full antialiased">
       <body className="min-h-full flex flex-col bg-slate-950 text-slate-100">
         {children}
+        <BGMToggle />
         <SoundToggle />
       </body>
     </html>
