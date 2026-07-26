@@ -1,8 +1,10 @@
 'use client';
 
+import { useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import type { Card as CardType } from '@/types/poker';
 import { cn } from '@/lib/utils';
+import { getSound } from '@/lib/sound';
 
 // 4-color deck (Scheme C — 鲜亮现代风)
 const SUIT_COLORS: Record<string, string> = {
@@ -25,19 +27,20 @@ interface CardProps {
   size?: 'sm' | 'md' | 'lg';
   faceDown?: boolean;
   highlight?: boolean;
+  silent?: boolean;         // 关闭该牌的音效(用于服务端渲染预览或静音场景)
   className?: string;
 }
 
-// 入场 / 出场 spring 动画
+// 入场 / 出场 spring 动画(放慢一档,更有"重量感")
 const dealVariants = {
-  initial: { opacity: 0, y: 24, scale: 0.85, rotate: -6 },
+  initial: { opacity: 0, y: 28, scale: 0.82, rotate: -8 },
   animate: { opacity: 1, y: 0, scale: 1, rotate: 0 },
-  exit: { opacity: 0, y: -12, scale: 0.85 },
+  exit: { opacity: 0, y: -14, scale: 0.85 },
 };
 
-const spring = { type: 'spring' as const, stiffness: 320, damping: 24 };
+const spring = { type: 'spring' as const, stiffness: 200, damping: 20 };
 
-// 高亮态:无限脉冲 boxShadow
+// 高亮态:无限脉冲 boxShadow(放慢一档,更明显)
 const highlightPulse = {
   opacity: 1,
   y: 0,
@@ -45,21 +48,40 @@ const highlightPulse = {
   rotate: 0,
   boxShadow: [
     '0 0 0 0px rgba(250, 204, 21, 0)',
-    '0 0 0 5px rgba(250, 204, 21, 0.55)',
+    '0 0 0 6px rgba(250, 204, 21, 0.55)',
     '0 0 0 0px rgba(250, 204, 21, 0)',
   ],
 };
 
 const highlightTransition = {
-  boxShadow: { duration: 1.6, repeat: Infinity, ease: 'easeInOut' as const },
+  boxShadow: { duration: 2.4, repeat: Infinity, ease: 'easeInOut' as const },
 };
 
-export function Card({ card, size = 'md', faceDown = false, highlight = false, className }: CardProps) {
+export function Card({ card, size = 'md', faceDown = false, highlight = false, silent = false, className }: CardProps) {
   const sizeClasses = {
     sm: 'w-9 h-12 text-xs',
     md: 'w-12 h-16 sm:w-14 sm:h-20 text-sm sm:text-base',
     lg: 'w-16 h-24 sm:w-20 sm:h-28 text-lg sm:text-xl',
   }[size];
+
+  // 音效:牌面首次出现 / 牌面变化 → 发牌音
+  useEffect(() => {
+    if (silent) return;
+    if (!card) return;
+    // 随机延迟 0~120ms,多张同时发牌时不撞音
+    getSound().play('deal', { delay: Math.random() * 0.12 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [card?.rank, card?.suit, silent]);
+
+  // 音效:faceDown true → false → 翻牌音
+  const prevFaceDown = useRef(faceDown);
+  useEffect(() => {
+    if (silent) return;
+    if (prevFaceDown.current === true && faceDown === false) {
+      getSound().play('flip');
+    }
+    prevFaceDown.current = faceDown;
+  }, [faceDown, silent]);
 
   // 牌背(没有 card 或 faceDown)
   if (faceDown || !card) {
