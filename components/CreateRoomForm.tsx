@@ -33,9 +33,10 @@ export function CreateRoomForm() {
           password: password || undefined,
         }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({} as { error?: string }));
       if (!res.ok) {
-        setError(data.error);
+        // 显示后端真实错误（500 时 fallback 到 status text）
+        setError(data.error || `${res.status} ${res.statusText || '服务异常'}`);
         setLoading(false);
         return;
       }
@@ -44,7 +45,8 @@ export function CreateRoomForm() {
       sessionStorage.setItem(`poker_nick_${data.roomId}`, nickname);
       router.push(`/room/${data.roomId}`);
     } catch (err) {
-      setError('网络错误');
+      // 真正的网络层错误（断网 / fetch 抛异常）
+      setError('网络连接失败，请检查网络后重试');
       setLoading(false);
     }
   };

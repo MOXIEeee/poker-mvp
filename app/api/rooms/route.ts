@@ -36,27 +36,37 @@ export async function POST(req: NextRequest) {
     password: password || '',
   };
 
-  const room = await createRoom(settings, nickname.trim());
-  // 通知频道（虽然没人订阅，先留着）
-  await notifyRoom(room.id, 'room-updated', { room });
+  try {
+    const room = await createRoom(settings, nickname.trim());
+    // 通知频道（虽然没人订阅，先留着）
+    await notifyRoom(room.id, 'room-updated', { room });
 
-  // 埋点：创建房间成功
-  await track({
-    name: 'create_room_success',
-    rid: room.id,
-    pid: room.hostId,
-    props: {
-      max_players: maxPlayers,
-      small_blind: smallBlind,
-      big_blind: bigBlind,
-      starting_chips: startingChips,
-      has_password: !!password,
-    },
-  });
+    // 埋点：创建房间成功
+    await track({
+      name: 'create_room_success',
+      rid: room.id,
+      pid: room.hostId,
+      props: {
+        max_players: maxPlayers,
+        small_blind: smallBlind,
+        big_blind: bigBlind,
+        starting_chips: startingChips,
+        has_password: !!password,
+      },
+    });
 
-  return NextResponse.json({
-    roomId: room.id,
-    playerId: room.hostId,
-    room,
-  });
+    return NextResponse.json({
+      roomId: room.id,
+      playerId: room.hostId,
+      room,
+    });
+  } catch (err) {
+    // 把内部错误转成可读 message（避免 500 + 空 body）
+    const message = err instanceof Error ? err.message : '服务异常';
+    console.error('[createRoom] failed:', err);
+    return NextResponse.json(
+      { error: `创建失败：${message}（可能是服务临时不可用，请稍后重试）` },
+      { status: 500 }
+    );
+  }
 }

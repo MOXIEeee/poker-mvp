@@ -26,9 +26,9 @@ export function JoinRoomForm() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ nickname, password: password || undefined }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({} as { error?: string }));
       if (!res.ok) {
-        setError(data.error);
+        setError(data.error || `${res.status} ${res.statusText || '服务异常'}`);
         setLoading(false);
         return;
       }
@@ -36,7 +36,7 @@ export function JoinRoomForm() {
       sessionStorage.setItem(`poker_nick_${formattedId}`, nickname);
       router.push(`/room/${formattedId}`);
     } catch (err) {
-      setError('网络错误');
+      setError('网络连接失败，请检查网络后重试');
       setLoading(false);
     }
   };
