@@ -35,6 +35,55 @@ export type AnalyticsEvent = {
 
 const MAX_PROPS_BYTES = 1024;
 
+// 事件采样率：控制 Upstash 命令数（避免 500k/天 限额爆）
+// 关键事件（funnel / 业务）100%，噪音事件 10%
+// 朋友局场景下 1 局 ~5 个关键事件 + ~30 个噪音事件, 采样后写命令数降 70-80%
+const SAMPLE_RATES: Record<string, number> = {
+  // === 100% 关键事件（业务核心, 用于 funnel / dashboard 主指标）===
+  create_room_success: 1.0,
+  join_room_success: 1.0,
+  join_room_fail: 1.0,
+  start_hand: 1.0,
+  hand_complete: 1.0,
+  show_hand: 1.0,
+  muck_hand: 1.0,
+  leave_room: 1.0,
+  reconnect_success: 1.0,
+  reconnect_fail: 1.0,
+  // === 10% 采样噪音事件（高频但价值密度低）===
+  home_view: 0.1,
+  tab_switch: 0.1,
+  room_view: 0.1,
+  page_hidden: 0.1,
+  page_visible: 0.1,
+  session_end: 0.1,
+  player_action: 0.1,        // 一局可能有 30+ 次 player_action, 采样后 3-4 次足够看分布
+  chat_send: 0.1,
+  pusher_connected: 0.1,
+  pusher_disconnected: 0.1,
+  pusher_reconnected: 0.1,
+  pusher_error: 0.1,
+  pusher_unavailable: 1.0,  // Pusher 不可用是关键事件
+  api_error: 1.0,            // API 错误是关键事件
+  api_latency: 0.05,         // api_latency 特别多, 5% 足够看趋势
+  start_hand_fail: 1.0,
+  player_action_fail: 1.0,
+  chat_send_fail: 1.0,
+};
+
+/**
+ * 决定是否记录这个事件（采样决策）
+ * - 关键事件 100%（rate = 1.0）
+ * - 噪音事件按概率（rate < 1.0）
+ * - 未列出事件默认 100%（新事件都记）
+ */
+function shouldTrack(name: string): boolean {
+  const rate = SAMPLE_RATES[name] ?? 1.0;
+  if (rate >= 1) return true;
+  if (rate <= 0) return false;
+  return Math.random() < rate;
+}
+
 /**
  * 记录一条事件。失败不抛错（埋点不能阻塞主流程）。
  */
@@ -44,6 +93,8 @@ export async function track(event: Omit<AnalyticsEvent, 't' | 'server'>): Promis
     console.log('[analytics]', event.name, event.props ?? {});
     return;
   }
+  // 采样过滤（噪音事件降频，避免 Upstash 限额爆）
+  if (!shouldTrack(event.name)) return;
   try {
     const redis = getRedis();
     if (!redis) return;
